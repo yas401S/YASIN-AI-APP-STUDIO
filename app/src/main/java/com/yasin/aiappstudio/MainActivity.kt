@@ -3,6 +3,8 @@ package com.yasin.aiappstudio
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -85,6 +87,41 @@ private fun StudioApp() {
     var loading by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val exportProjectLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null && selectedProject.isNotBlank()) scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val archive = File(context.cacheDir, "studio-export-${System.currentTimeMillis()}.zip")
+                    try {
+                        WorkspaceManager(workspace).exportProject(selectedProject, archive)
+                        val output = context.contentResolver.openOutputStream(uri) ?: error("ذخیره فایل انتخاب‌شده ممکن نیست.")
+                        output.use { stream -> archive.inputStream().use { it.copyTo(stream) } }
+                    } finally { archive.delete() }
+                }
+            }.onSuccess { notice = "فایل ZIP پروژه صادر شد." }
+             .onFailure { notice = it.message ?: "خروجی گرفتن ناموفق بود." }
+        }
+    }
+    val importProjectLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val archive = File(context.cacheDir, "studio-import-${System.currentTimeMillis()}.zip")
+                    try {
+                        val input = context.contentResolver.openInputStream(uri) ?: error("خواندن فایل انتخاب‌شده ممکن نیست.")
+                        input.use { source -> archive.outputStream().use { source.copyTo(it) } }
+                        val importedName = "Imported-${System.currentTimeMillis()}"
+                        WorkspaceManager(workspace).importProject(archive, importedName)
+                        importedName
+                    } finally { archive.delete() }
+                }
+            }.onSuccess { importedName ->
+                projects.add(0, importedName); persistProjects()
+                selectedProject = importedName; refreshFiles()
+                notice = "پروژه وارد شد: $importedName"
+            }.onFailure { notice = it.message ?: "ورود پروژه ناموفق بود." }
+        }
+    }
 
     fun projectDir(): File = File(workspace, selectedProject)
     fun refreshFiles() {
@@ -149,6 +186,8 @@ private fun StudioApp() {
                 "پروژه‌ها" -> Column(Modifier.fillMaxSize().padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("پروژه‌ها و فایل‌ها", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { importProjectLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed")) }) { Text("ورود ZIP") }
+                        TextButton(onClick = { if (selectedProject.isNotBlank()) exportProjectLauncher.launch("$selectedProject.zip") else notice = "ابتدا یک پروژه را باز کنید." }) { Text("خروجی ZIP") }
                         Button(onClick = { showCreateProject = true }) { Icon(Icons.Default.Add, null); Text("پروژه") }
                     }
                     Spacer(Modifier.height(10.dp))
