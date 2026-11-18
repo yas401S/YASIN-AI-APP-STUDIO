@@ -14,6 +14,7 @@ object ProjectTemplates {
 
     fun files(templateId: String, projectName: String): Map<String, String> {
         val safeTitle = projectName.replace("\\", "\\\\").replace("\"", "\\\"")
+        val packageName = projectName.lowercase().replace(Regex("[^a-z0-9-]"), "-").trim('-').ifBlank { "new-project" }
         return when (templateId) {
             "blank" -> mapOf("README.md" to "# $projectName\n\nساخته‌شده با YASIN AI APP STUDIO.\n")
             "web-static" -> mapOf(
@@ -28,7 +29,7 @@ object ProjectTemplates {
             )
             "web-react" -> mapOf(
                 "README.md" to "# $projectName\n\nقالب React + Vite. برای اجرا به Node.js و نصب وابستگی‌ها نیاز دارد.\n",
-                "package.json" to """{"name":"${projectName.lowercase().replace(Regex("[^a-z0-9-]"), "-")}","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"vite","build":"vite build","preview":"vite preview"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}""",
+                "package.json" to """{"name":"${packageName}","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"vite","build":"vite build","preview":"vite preview"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}""",
                 "index.html" to "<div id=\"root\"></div><script type=\"module\" src=\"/src/main.jsx\"></script>\n",
                 "src/main.jsx" to "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport './style.css';\nfunction App(){return <main><h1>$safeTitle</h1><p>اولین پروژه React شما</p></main>}\ncreateRoot(document.getElementById('root')).render(<App/>);\n",
                 "src/style.css" to "body{font-family:system-ui;margin:0;padding:2rem;background:#f4f6fb;color:#17243a}\n"
