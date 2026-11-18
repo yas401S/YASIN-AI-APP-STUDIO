@@ -71,6 +71,8 @@ private fun StudioApp() {
     var selectedProject by remember { mutableStateOf("") }
     var selectedPath by remember { mutableStateOf("README.md") }
     var editorText by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     var fileItems by remember { mutableStateOf(listOf<WorkspaceFile>()) }
     var draftName by remember { mutableStateOf("") }
     var selectedTemplate by remember { mutableStateOf("blank") }
@@ -199,6 +201,28 @@ private fun StudioApp() {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("پروژه فعال: $selectedProject", color = Gold, modifier = Modifier.weight(1f))
                             TextButton(onClick = { showCreateEntry = true }) { Text("فایل/پوشه جدید") }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(searchQuery, { searchQuery = it }, modifier = Modifier.weight(1f),
+                                singleLine = true, label = { Text("جست‌وجو در فایل‌های پروژه") })
+                            Button(onClick = {
+                                runCatching { searchResults = WorkspaceManager(workspace).search(selectedProject, searchQuery) }
+                                    .onFailure { notice = it.message ?: "جست‌وجو ناموفق بود." }
+                            }) { Text("بگرد") }
+                        }
+                        if (searchResults.isNotEmpty()) {
+                            Text("نتایج جست‌وجو", color = Gold, fontWeight = FontWeight.Bold)
+                            searchResults.forEach { hit ->
+                                TextButton(onClick = {
+                                    val path = hit.first.substringBeforeLast(":")
+                                    openFile(path)
+                                }) {
+                                    Column(Modifier.fillMaxWidth()) {
+                                        Text(hit.first, color = Gold, fontSize = 11.sp)
+                                        Text(hit.second, color = Muted, fontSize = 11.sp, maxLines = 2)
+                                    }
+                                }
+                            }
                         }
                         TextButton(onClick = { refreshFiles() }) { Text("بازخوانی فهرست فایل‌ها") }
                     }
