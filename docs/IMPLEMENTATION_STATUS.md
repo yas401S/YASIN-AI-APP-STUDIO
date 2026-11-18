@@ -1,0 +1,47 @@
+# Implementation status — 13 required capabilities
+
+This file distinguishes shipped, tested functionality from planned work. A capability is not complete merely because a screen, button, interface, or adapter declaration exists.
+
+## Delivery rule
+Every capability must have a working user workflow, visible failure states, automated or repeatable tests, and documented security boundaries. The Android app is the mobile control center; untrusted builds execute only in isolated build infrastructure.
+
+## Current verified foundation
+- Android client: Kotlin + Jetpack Compose app foundation.
+- Local workspace: project directories, nested file creation, text read/write, timestamped save snapshots.
+- New workspace service on feature/13-capabilities-foundation: project CRUD, rename/duplicate/delete, safe path validation, bounded ZIP import/export, text search, and starter-template file generation.
+- Starter templates: blank, static web, React/Vite, Android/Kotlin, and Godot 2D. These are project source files, not a claim that their toolchains can already run on the phone.
+- Unit tests added for template creation, search, snapshots, project operations, archive round-trip, and ZIP path traversal rejection.
+- Pull requests now run Android unit tests before building the debug APK.
+
+## The 13 capability tracks
+
+| # | Capability | Current state | Completion gate |
+|---|---|---|---|
+| 1 | Android app development | Basic Kotlin/Compose client and Android template | Generate/import, configure, build, install, and verify APK/AAB |
+| 2 | Websites and web apps | Static and React/Vite templates | Dependency install, live preview, test, production build, export |
+| 3 | Game development | Godot starter project | Isolated Godot import, editor/runtime preview, export profiles; Unity only with licensed tooling |
+| 4 | Code editor and file management | Basic editor plus workspace CRUD/search/archive service | Tree navigation, syntax-aware editor, multi-file workflow, diff and restore |
+| 5 | Preview and execution | Not implemented as a real runner | Sandboxed web preview and explicit Android/game runtime support |
+| 6 | Automatic error repair | AI chat exists; repair loop not implemented | Collect diagnostics, propose diff, approve/revert, rerun checks |
+| 7 | APK/AAB production | Debug APK workflow exists for the Studio app itself | Per-project isolated Gradle jobs, signed release handling, artifact/log delivery |
+| 8 | Version management | Local save snapshots; Git integration pending | Git commits, branches, diffs, tags, restore/revert |
+| 9 | Multiple project management | Local projects plus CRUD/archive service | Import/export UI, duplication/rename/delete, project-specific profiles and sync |
+| 10 | Templates and component library | Five real starter templates | Search/filter, versioned templates, reusable component/snippet library |
+| 11 | Account/security/admin | Not implemented | Authentication, server authorization, sessions, privacy, audit events, admin roles |
+| 12 | GitHub integration | Not implemented | OAuth, least-privilege repo import/export, branches, push/pull, conflict handling |
+| 13 | Cloud build/diagnostics/AI cost | Not implemented | Queue, isolated workers, logs, retry/cancel, artifacts, usage accounting, budgets and quotas |
+
+## Implementation sequence
+
+1. Complete and integrate the local workspace workflows into the Compose UI; add import/export pickers and tests.
+2. Build the Cloudflare control plane: authenticated sessions, project metadata, AI provider routing, quotas, and usage records. Provider secrets remain server-side.
+3. Add GitHub OAuth and repository operations with least-privilege permissions.
+4. Add isolated build orchestration for Android and web; add Godot when a supported isolated toolchain is available.
+5. Add real previews, structured diagnostics, reviewable AI patches, and rerun checks.
+6. Finish account/admin controls, reusable component library, cost budgets, observability, and end-to-end acceptance tests.
+
+## Explicit non-goals
+- Do not execute arbitrary generated code inside a public Cloudflare API Worker or Android app process.
+- Do not put provider keys, GitHub tokens, signing keys, or admin credentials in the APK or repository.
+- Do not show a successful preview/build/repair state unless the underlying process returned success and its output was verified.
+- Do not claim Unity builds are available unless licensing and build infrastructure are actually configured.
