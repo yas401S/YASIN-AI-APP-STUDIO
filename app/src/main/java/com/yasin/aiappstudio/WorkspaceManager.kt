@@ -126,7 +126,7 @@ class WorkspaceManager(private val root: File) {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
         val dir = project(name)
-        val hits = mutableListOf<Pair<String, Int>>()
+        val hits = mutableListOf<Pair<String, String>>()
         dir.walkTopDown().filter { it.isFile && !it.relativeTo(dir).path.split(File.separator).any { p -> p.startsWith(".") } }
             .forEach { file ->
                 if (hits.size >= maxResults || file.length() > MAX_TEXT_BYTES) return@forEach
