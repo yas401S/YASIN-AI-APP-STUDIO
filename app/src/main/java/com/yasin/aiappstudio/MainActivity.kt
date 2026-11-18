@@ -93,6 +93,30 @@ private fun StudioApp() {
     var loading by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    fun projectDir(): File = File(workspace, selectedProject)
+    fun refreshFiles() {
+        val root = projectDir()
+        fileItems = if (root.exists()) root.walkTopDown()
+            .filter { it != root && !it.relativeTo(root).path.split(File.separator).any { p -> p.startsWith(".") } }
+            .map { WorkspaceFile(it, it.relativeTo(root).invariantSeparatorsPath, it.isDirectory) }
+            .sortedWith(compareBy<WorkspaceFile>({ !it.directory }, { it.relative.lowercase() })).toList()
+        else emptyList()
+    }
+    fun openFile(relative: String) {
+        runCatching {
+            selectedPath = relative
+            editorText = WorkspaceManager(workspace).readFile(selectedProject, relative)
+            page = "ویرایشگر"
+        }.onFailure { notice = it.message ?: "بازکردن فایل ناموفق بود." }
+    }
+    fun saveFile() {
+        runCatching {
+            WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, editorText)
+            notice = "فایل ذخیره شد و نسخه قبلی در تاریخچه ثبت شد."
+            refreshFiles()
+        }.onFailure { notice = "ذخیره فایل ناموفق بود: " + (it.message ?: "خطا") }
+    }
+    fun persistProjects() { prefs.edit().putString("projects", JSONArray(projects).toString()).apply() }
     val exportProjectLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null && selectedProject.isNotBlank()) scope.launch {
             runCatching {
@@ -128,31 +152,6 @@ private fun StudioApp() {
             }.onFailure { notice = it.message ?: "ورود پروژه ناموفق بود." }
         }
     }
-
-    fun projectDir(): File = File(workspace, selectedProject)
-    fun refreshFiles() {
-        val root = projectDir()
-        fileItems = if (root.exists()) root.walkTopDown()
-            .filter { it != root && !it.relativeTo(root).path.split(File.separator).any { p -> p.startsWith(".") } }
-            .map { WorkspaceFile(it, it.relativeTo(root).invariantSeparatorsPath, it.isDirectory) }
-            .sortedWith(compareBy<WorkspaceFile>({ !it.directory }, { it.relative.lowercase() })).toList()
-        else emptyList()
-    }
-    fun openFile(relative: String) {
-        runCatching {
-            selectedPath = relative
-            editorText = WorkspaceManager(workspace).readFile(selectedProject, relative)
-            page = "ویرایشگر"
-        }.onFailure { notice = it.message ?: "بازکردن فایل ناموفق بود." }
-    }
-    fun saveFile() {
-        runCatching {
-            WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, editorText)
-            notice = "فایل ذخیره شد و نسخه قبلی در تاریخچه ثبت شد."
-            refreshFiles()
-        }.onFailure { notice = "ذخیره فایل ناموفق بود: " + (it.message ?: "خطا") }
-    }
-    fun persistProjects() { prefs.edit().putString("projects", JSONArray(projects).toString()).apply() }
 
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Column(Modifier.fillMaxSize()) {
