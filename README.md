@@ -8,6 +8,8 @@ Android-first AI-assisted software development studio. The full mandatory produc
 - Real app-private workspace folders and files.
 - Create nested files and folders, open/edit/save files, rename and delete entries.
 - File saves create timestamped snapshots under the project's hidden `.history` directory.
+- Workspace service supports project rename/duplicate/delete, bounded ZIP import/export, text search, safe path checks, and local starter-template generation (blank, static web, React/Vite, Android/Kotlin, Godot).
+- Unit tests cover workspace operations, templates, archive round-trips, and ZIP path traversal rejection. Pull requests run tests before APK packaging.
 - Configurable OpenAI-compatible Chat Completions connection (development-only direct key mode).
 - GitHub Actions workflow for a debug APK build.
 
@@ -16,6 +18,9 @@ Every push to `main` starts the Android GitHub Actions workflow. After a success
 
 ## Security
 The current direct AI key setting is a development convenience only and is not suitable for a public release. Before public distribution, route AI requests through an authenticated server-side gateway, store provider secrets only server-side, and add per-user authorization, quotas, and audit logging. Do not commit secrets or signing keys.
+
+## Implementation status
+See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for the honest status and acceptance gates of all 13 mandatory capabilities. Items marked planned are not yet implemented.
 
 ## Required product scope
 All requirements in [docs/PRODUCT_REQUIREMENTS.md](docs/PRODUCT_REQUIREMENTS.md) remain in scope, including Android/web/game targets, real previews and builds, automatic diagnostics and repair, GitHub, account/security, cloud build orchestration, and AI cost controls. Roadmap items are not represented as implemented until their workflows are built and tested.
