@@ -94,7 +94,7 @@ class WorkspaceManager(private val root: File) {
         check(file.parentFile?.mkdirs() != false)
         if (file.exists() && file.isFile) {
             val history = File(dir, ".history").apply { mkdirs() }
-            val safe = relativePath.replace('/', '_').replace('\\\\', '_')
+            val safe = relativePath.replace('/', '_').replace('\\', '_')
             File(history, "${System.currentTimeMillis()}-$safe.snapshot").writeText(file.readText())
         }
         file.writeText(content)
@@ -110,7 +110,7 @@ class WorkspaceManager(private val root: File) {
     }
 
     fun renameEntry(name: String, oldPath: String, newName: String) {
-        require(newName.isNotBlank() && !newName.contains('/') && !newName.contains('\\\\'))
+        require(newName.isNotBlank() && !newName.contains('/') && !newName.contains('\\'))
         val source = child(project(name), oldPath) ?: error("مسیر مبدا نامعتبر است.")
         require(source.exists() && source != project(name))
         val target = File(source.parentFile, newName)
@@ -201,7 +201,7 @@ class WorkspaceManager(private val root: File) {
     }
 
     private fun child(base: File, relative: String): File? {
-        if (relative.isBlank() || relative.startsWith("/") || relative.contains('\\\\')) return null
+        if (relative.isBlank() || relative.startsWith("/") || relative.contains('\\')) return null
         val canonicalBase = base.canonicalFile
         val target = File(canonicalBase, relative).canonicalFile
         return target.takeIf { it.path.startsWith(canonicalBase.path + File.separator) }
@@ -210,7 +210,7 @@ class WorkspaceManager(private val root: File) {
     private fun validateProjectName(value: String): String {
         val name = value.trim()
         require(name.isNotEmpty() && name.length <= 70 && name != "." && name != "..")
-        require(name.none { it == '/' || it == '\\\\' || it.isISOControl() })
+        require(name.none { it == '/' || it == '\\' || it.isISOControl() })
         require(!name.startsWith("."))
         return name
     }
