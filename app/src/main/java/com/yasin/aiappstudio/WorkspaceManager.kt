@@ -61,9 +61,7 @@ class WorkspaceManager(private val root: File) {
         val clean = validateProjectName(copyName)
         val target = File(root, clean)
         require(!target.exists()) { "نام مقصد از قبل وجود دارد." }
-        source.copyRecursively(target, overwrite = false) { file, _ ->
-            if (file.name == ".history") OnErrorAction.SKIP else OnErrorAction.TERMINATE
-        }
+        check(source.copyRecursively(target, overwrite = false)) { "تکثیر پروژه ناموفق بود." }
         return target
     }
 
