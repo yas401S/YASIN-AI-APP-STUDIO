@@ -38,7 +38,7 @@ class WorkspaceManager(private val root: File) {
         try {
             ProjectTemplates.files(templateId, clean).forEach { (path, body) ->
                 val file = child(target, path) ?: error("مسیر قالب نامعتبر است.")
-                check(file.parentFile?.mkdirs() != false)
+                check(file.parentFile?.let { it.isDirectory || it.mkdirs() } != false)
                 file.writeText(body)
             }
         } catch (e: Exception) {
@@ -89,7 +89,7 @@ class WorkspaceManager(private val root: File) {
         val dir = project(name)
         val file = child(dir, relativePath) ?: error("مسیر فایل نامعتبر است.")
         require(relativePath.isNotBlank() && !relativePath.endsWith("/")) { "نام فایل معتبر نیست." }
-        check(file.parentFile?.mkdirs() != false)
+        check(file.parentFile?.let { it.isDirectory || it.mkdirs() } != false)
         if (file.exists() && file.isFile) {
             val history = File(dir, ".history").apply { mkdirs() }
             val safe = relativePath.replace('/', '_').replace('\\', '_')
@@ -102,7 +102,7 @@ class WorkspaceManager(private val root: File) {
         val target = child(project(name), relativePath) ?: error("مسیر نامعتبر است.")
         require(relativePath.isNotBlank())
         require(!target.exists()) { "این فایل یا پوشه از قبل وجود دارد." }
-        check(target.parentFile?.mkdirs() != false)
+        check(target.parentFile?.let { it.isDirectory || it.mkdirs() } != false)
         val ok = if (directory) target.mkdirs() else target.createNewFile()
         check(ok) { "ساخت فایل یا پوشه ناموفق بود." }
     }
@@ -169,7 +169,7 @@ class WorkspaceManager(private val root: File) {
                     if (entry.isDirectory) {
                         check(out.mkdirs() || out.isDirectory)
                     } else {
-                        check(out.parentFile?.mkdirs() != false)
+                        check(out.parentFile?.let { it.isDirectory || it.mkdirs() } != false)
                         var written = 0L
                         FileOutputStream(out).use { output ->
                             val buffer = ByteArray(8192)
