@@ -61,7 +61,7 @@ class WorkspaceManager(private val root: File) {
         val clean = validateProjectName(copyName)
         val target = File(root, clean)
         require(!target.exists()) { "نام مقصد از قبل وجود دارد." }
-        source.copyRecursively(target, overwrite = false) { _, file ->
+        source.copyRecursively(target, overwrite = false) { file, _ ->
             if (file.name == ".history") OnErrorAction.SKIP else OnErrorAction.TERMINATE
         }
         return target
@@ -124,7 +124,7 @@ class WorkspaceManager(private val root: File) {
         check(target.deleteRecursively()) { "حذف ناموفق بود." }
     }
 
-    fun search(name: String, query: String, maxResults: Int = 100): List<Pair<String, Int>> {
+    fun search(name: String, query: String, maxResults: Int = 100): List<Pair<String, String>> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
         val dir = project(name)
