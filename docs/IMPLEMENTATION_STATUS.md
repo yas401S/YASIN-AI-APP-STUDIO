@@ -20,12 +20,12 @@ Every capability must have a working user workflow, visible failure states, auto
 | 1 | Android app development | Basic Kotlin/Compose client and Android template | Generate/import, configure, build, install, and verify APK/AAB |
 | 2 | Websites and web apps | Static and React/Vite templates | Dependency install, live preview, test, production build, export |
 | 3 | Game development | Godot starter project | Isolated Godot import, editor/runtime preview, export profiles; Unity only with licensed tooling |
-| 4 | Code editor and file management | Basic editor plus workspace CRUD/search/archive service | Tree navigation, syntax-aware editor, multi-file workflow, diff and restore |
+| 4 | Code editor and file management | Editor and file actions use workspace service; safe CRUD, search, snapshots, and ZIP archives | Tree navigation, syntax-aware editor, multi-file workflow, diff and restore |
 | 5 | Preview and execution | Not implemented as a real runner | Sandboxed web preview and explicit Android/game runtime support |
 | 6 | Automatic error repair | AI chat exists; repair loop not implemented | Collect diagnostics, propose diff, approve/revert, rerun checks |
 | 7 | APK/AAB production | Debug APK workflow exists for the Studio app itself | Per-project isolated Gradle jobs, signed release handling, artifact/log delivery |
 | 8 | Version management | Local save snapshots; Git integration pending | Git commits, branches, diffs, tags, restore/revert |
-| 9 | Multiple project management | Local projects plus CRUD/archive service | Import/export UI, duplication/rename/delete, project-specific profiles and sync |
+| 9 | Multiple project management | Local project CRUD, duplicate/rename/delete UI, and ZIP import/export UI | Import/export UI, duplication/rename/delete, project-specific profiles and sync |
 | 10 | Templates and component library | Five real starter templates | Search/filter, versioned templates, reusable component/snippet library |
 | 11 | Account/security/admin | Not implemented | Authentication, server authorization, sessions, privacy, audit events, admin roles |
 | 12 | GitHub integration | Not implemented | OAuth, least-privilege repo import/export, branches, push/pull, conflict handling |
