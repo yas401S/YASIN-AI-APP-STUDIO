@@ -71,6 +71,7 @@ private fun StudioApp() {
     var editorText by remember { mutableStateOf("") }
     var fileItems by remember { mutableStateOf(listOf<WorkspaceFile>()) }
     var draftName by remember { mutableStateOf("") }
+    var selectedTemplate by remember { mutableStateOf("blank") }
     var createType by remember { mutableStateOf("file") }
     var showCreateProject by remember { mutableStateOf(false) }
     var showCreateEntry by remember { mutableStateOf(false) }
@@ -85,7 +86,7 @@ private fun StudioApp() {
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    fun projectDir(): File = File(workspace, safeName(selectedProject))
+    fun projectDir(): File = File(workspace, selectedProject)
     fun refreshFiles() {
         val root = projectDir()
         fileItems = if (root.exists()) root.walkTopDown()
@@ -176,7 +177,7 @@ private fun StudioApp() {
                                     Text(name, color = Color.White, modifier = Modifier.weight(1f))
                                     TextButton(onClick = {
                                         selectedProject = name
-                                        File(workspace, safeName(name)).mkdirs()
+                                        File(workspace, name).mkdirs()
                                         refreshFiles()
                                     }) { Text(if (selectedProject == name) "فعال" else "بازکردن") }
                                 }
@@ -258,17 +259,31 @@ private fun StudioApp() {
 
     if (showCreateProject) AlertDialog(onDismissRequest = { showCreateProject = false },
         title = { Text("ساخت پروژه") },
-        text = { OutlinedTextField(draftName, { draftName = it }, label = { Text("نام پروژه") }, singleLine = true) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(draftName, { draftName = it }, label = { Text("نام پروژه") }, singleLine = true)
+            Text("قالب شروع", color = Gold, fontWeight = FontWeight.Bold)
+            ProjectTemplates.catalog.forEach { template ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { selectedTemplate = template.id }) {
+                    RadioButton(selected = selectedTemplate == template.id, onClick = { selectedTemplate = template.id })
+                    Column {
+                        Text(template.title, color = Color.White)
+                        Text(template.description, color = Muted, fontSize = 11.sp)
+                    }
+                }
+            }
+        } },
         confirmButton = { TextButton(onClick = {
             val name = draftName.trim()
             if (name.isNotEmpty() && !projects.contains(name)) {
-                projects.add(0, name); persistProjects()
-                selectedProject = name
-                File(workspace, safeName(name)).mkdirs()
-                val readme = File(File(workspace, safeName(name)), "README.md")
-                readme.writeText("# $name\n\nپروژه ساخته‌شده با YASIN AI APP STUDIO.\n")
-                selectedPath = "README.md"; editorText = readme.readText()
-                refreshFiles(); draftName = ""; showCreateProject = false; page = "ویرایشگر"
+                runCatching {
+                    val created = WorkspaceManager(workspace).createProject(name, selectedTemplate)
+                    projects.add(0, name); persistProjects()
+                    selectedProject = name
+                    val readme = File(created, "README.md")
+                    selectedPath = if (readme.isFile) "README.md" else ProjectTemplates.files(selectedTemplate, name).keys.first()
+                    editorText = File(created, selectedPath).takeIf { it.isFile }?.readText().orEmpty()
+                    refreshFiles(); draftName = ""; selectedTemplate = "blank"; showCreateProject = false; page = "ویرایشگر"
+                }.onFailure { notice = it.message ?: "ساخت پروژه ناموفق بود." }
             }
         }) { Text("ایجاد") } },
         dismissButton = { TextButton(onClick = { showCreateProject = false }) { Text("لغو") } })
