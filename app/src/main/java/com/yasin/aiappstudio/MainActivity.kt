@@ -96,27 +96,18 @@ private fun StudioApp() {
         else emptyList()
     }
     fun openFile(relative: String) {
-        val target = safeChild(projectDir(), relative)
-        if (target != null && target.isFile) {
+        runCatching {
             selectedPath = relative
-            editorText = runCatching { target.readText() }.getOrDefault("")
+            editorText = WorkspaceManager(workspace).readFile(selectedProject, relative)
             page = "ویرایشگر"
-        }
+        }.onFailure { notice = it.message ?: "بازکردن فایل ناموفق بود." }
     }
     fun saveFile() {
-        val target = safeChild(projectDir(), selectedPath)
-        if (target != null) {
-            runCatching {
-                target.parentFile?.mkdirs()
-                target.writeText(editorText)
-                val history = File(projectDir(), ".history").apply { mkdirs() }
-                val stamp = SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())
-                val snapshot = File(history, stamp + "-" + selectedPath.replace('/', '_') + ".snapshot")
-                snapshot.writeText(editorText)
-                notice = "فایل ذخیره شد و نسخه پشتیبان ثبت شد."
-                refreshFiles()
-            }.onFailure { notice = "ذخیره فایل ناموفق بود: " + (it.message ?: "خطا") }
-        } else notice = "مسیر فایل معتبر نیست."
+        runCatching {
+            WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, editorText)
+            notice = "فایل ذخیره شد و نسخه قبلی در تاریخچه ثبت شد."
+            refreshFiles()
+        }.onFailure { notice = "ذخیره فایل ناموفق بود: " + (it.message ?: "خطا") }
     }
     fun persistProjects() { prefs.edit().putString("projects", JSONArray(projects).toString()).apply() }
 
@@ -192,7 +183,7 @@ private fun StudioApp() {
                                             if (!entry.directory) TextButton(onClick = { openFile(entry.relative) }) { Text("ویرایش") }
                                             IconButton(onClick = { renameText = entry.file.name; selectedPath = entry.relative; showRename = true }) { Icon(Icons.Default.Edit, null, tint = Muted) }
                                             IconButton(onClick = {
-                                                runCatching { entry.file.deleteRecursively(); refreshFiles(); notice = "حذف شد." }
+                                                runCatching { WorkspaceManager(workspace).deleteEntry(selectedProject, entry.relative); refreshFiles(); notice = "حذف شد." }
                                                     .onFailure { notice = "حذف ناموفق بود." }
                                             }) { Icon(Icons.Default.Delete, null, tint = Color(0xFFFF7777)) }
                                         }
@@ -299,10 +290,10 @@ private fun StudioApp() {
             OutlinedTextField(draftName, { draftName = it }, label = { Text("نام یا مسیر نسبی، مانند src/Main.kt") })
         } },
         confirmButton = { TextButton(onClick = {
-            val target = safeChild(projectDir(), draftName.trim())
-            if (target != null && draftName.isNotBlank()) {
-                runCatching { if (createType == "folder") target.mkdirs() else { target.parentFile?.mkdirs(); target.createNewFile() } }
-                refreshFiles(); draftName = ""; showCreateEntry = false
+            if (draftName.isNotBlank()) {
+                runCatching { WorkspaceManager(workspace).createEntry(selectedProject, draftName.trim(), createType == "folder") }
+                    .onSuccess { refreshFiles(); draftName = ""; showCreateEntry = false }
+                    .onFailure { notice = it.message ?: "ساخت فایل ناموفق بود." }
             }
         }) { Text("ایجاد") } },
         dismissButton = { TextButton(onClick = { showCreateEntry = false }) { Text("لغو") } })
@@ -311,12 +302,10 @@ private fun StudioApp() {
         title = { Text("تغییر نام فایل یا پوشه") },
         text = { OutlinedTextField(renameText, { renameText = it }, label = { Text("نام جدید") }) },
         confirmButton = { TextButton(onClick = {
-            val old = safeChild(projectDir(), selectedPath)
-            val parent = old?.parentFile
             val newName = renameText.trim()
-            if (old != null && parent != null && newName.isNotBlank() && !newName.contains("/") && !newName.contains("\\")) {
-                old.renameTo(File(parent, newName)); refreshFiles()
-            }
+            runCatching { WorkspaceManager(workspace).renameEntry(selectedProject, selectedPath, newName) }
+                .onSuccess { refreshFiles() }
+                .onFailure { notice = it.message ?: "تغییر نام ناموفق بود." }
             showRename = false
         }) { Text("تغییر نام") } },
         dismissButton = { TextButton(onClick = { showRename = false }) { Text("لغو") } })
