@@ -78,6 +78,10 @@ private fun StudioApp() {
     var showCreateProject by remember { mutableStateOf(false) }
     var showCreateEntry by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
+    var showRenameProject by remember { mutableStateOf(false) }
+    var showDeleteProject by remember { mutableStateOf(false) }
+    var projectToManage by remember { mutableStateOf("") }
+    var projectNameDraft by remember { mutableStateOf("") }
     var renameText by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
     var reply by remember { mutableStateOf("") }
@@ -210,6 +214,19 @@ private fun StudioApp() {
                                         File(workspace, name).mkdirs()
                                         refreshFiles()
                                     }) { Text(if (selectedProject == name) "فعال" else "بازکردن") }
+                                    TextButton(onClick = {
+                                        runCatching {
+                                            val copyName = "${name}-copy-${System.currentTimeMillis() % 10000}"
+                                            WorkspaceManager(workspace).duplicateProject(name, copyName)
+                                            projects.add(0, copyName); persistProjects(); notice = "پروژه تکثیر شد."
+                                        }.onFailure { notice = it.message ?: "تکثیر ناموفق بود." }
+                                    }) { Text("کپی") }
+                                    IconButton(onClick = { projectToManage = name; projectNameDraft = name; showRenameProject = true }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "تغییر نام پروژه", tint = Muted)
+                                    }
+                                    IconButton(onClick = { projectToManage = name; showDeleteProject = true }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "حذف پروژه", tint = Color(0xFFFF7777))
+                                    }
                                 }
                                 if (selectedProject == name) {
                                     fileItems.forEach { entry ->
@@ -317,6 +334,41 @@ private fun StudioApp() {
             }
         }) { Text("ایجاد") } },
         dismissButton = { TextButton(onClick = { showCreateProject = false }) { Text("لغو") } })
+
+    if (showRenameProject) AlertDialog(
+        onDismissRequest = { showRenameProject = false },
+        title = { Text("تغییر نام پروژه") },
+        text = { OutlinedTextField(projectNameDraft, { projectNameDraft = it }, label = { Text("نام جدید پروژه") }, singleLine = true) },
+        confirmButton = { TextButton(onClick = {
+            runCatching {
+                WorkspaceManager(workspace).renameProject(projectToManage, projectNameDraft)
+                val index = projects.indexOf(projectToManage)
+                if (index >= 0) projects[index] = projectNameDraft.trim()
+                if (selectedProject == projectToManage) selectedProject = projectNameDraft.trim()
+                persistProjects(); refreshFiles(); notice = "نام پروژه تغییر کرد."
+            }.onFailure { notice = it.message ?: "تغییر نام پروژه ناموفق بود." }
+            showRenameProject = false
+        }) { Text("ذخیره") } },
+        dismissButton = { TextButton(onClick = { showRenameProject = false }) { Text("لغو") } }
+    )
+
+    if (showDeleteProject) AlertDialog(
+        onDismissRequest = { showDeleteProject = false },
+        title = { Text("حذف پروژه") },
+        text = { Text("پروژه «$projectToManage» و تمام فایل‌های آن حذف شود؟ این کار قابل بازگشت نیست.") },
+        confirmButton = { TextButton(onClick = {
+            runCatching {
+                WorkspaceManager(workspace).deleteProject(projectToManage)
+                projects.remove(projectToManage)
+                if (selectedProject == projectToManage) {
+                    selectedProject = ""; fileItems = emptyList(); editorText = ""
+                }
+                persistProjects(); notice = "پروژه حذف شد."
+            }.onFailure { notice = it.message ?: "حذف پروژه ناموفق بود." }
+            showDeleteProject = false
+        }) { Text("حذف") } },
+        dismissButton = { TextButton(onClick = { showDeleteProject = false }) { Text("انصراف") } }
+    )
 
     if (showCreateEntry) AlertDialog(onDismissRequest = { showCreateEntry = false },
         title = { Text("ساخت فایل یا پوشه") },
