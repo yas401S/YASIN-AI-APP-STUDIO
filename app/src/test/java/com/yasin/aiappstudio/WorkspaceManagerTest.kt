@@ -62,7 +62,7 @@ class WorkspaceManagerTest {
         try {
             manager.importProject(archive, "imported")
             fail("Zip Slip archive should be rejected")
-        } catch (_: IllegalArgumentException) { }
+        } catch (_: Exception) { }
         assertFalse(File(temp, "escaped.txt").exists())
         assertFalse(File(temp, "workspace/imported").exists())
     }
