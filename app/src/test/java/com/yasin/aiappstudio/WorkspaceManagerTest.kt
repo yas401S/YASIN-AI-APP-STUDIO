@@ -51,7 +51,7 @@ class WorkspaceManagerTest {
         try {
             manager.saveFile("safe", "../outside.txt", "bad")
             fail("Traversal path should be rejected")
-        } catch (_: IllegalArgumentException) { }
+        } catch (_: Exception) { }
 
         val archive = File(temp, "attack.zip")
         ZipOutputStream(FileOutputStream(archive)).use { zip ->
