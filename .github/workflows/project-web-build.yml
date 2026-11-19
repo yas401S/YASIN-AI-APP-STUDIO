@@ -83,6 +83,13 @@ jobs:
             echo "- Output: `dist/`"
             echo "- Artifact: `web-dist-$PROJECT_NAME`"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Explain optional Cloudflare setup
+        if: ${{ vars.CLOUDFLARE_PAGES_DEPLOY != 'true' }}
+        run: |
+          {
+            echo "## Online preview not enabled"
+            echo "The build artifact is ready. To publish an isolated Cloudflare Pages preview, follow docs/CLOUDFLARE_PAGES_PREVIEW.md and enable the repository variable."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy-preview:
     needs: build
@@ -130,7 +137,3 @@ jobs:
             echo "- Branch: `$PREVIEW_BRANCH`"
             echo "- This is a preview deployment; it does not replace the production branch."
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Explain skipped deployment
-        if: ${{ always() && !cancelled() && vars.CLOUDFLARE_PAGES_DEPLOY != 'true' }}
-        run: |
-          echo "Cloudflare preview deployment was not enabled. Set repository variable CLOUDFLARE_PAGES_DEPLOY=true and add CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN secrets." >> "$GITHUB_STEP_SUMMARY"
