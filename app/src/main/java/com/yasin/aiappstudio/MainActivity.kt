@@ -84,6 +84,9 @@ private fun StudioApp() {
     var fileItems by remember { mutableStateOf(listOf<WorkspaceFile>()) }
     var draftName by remember { mutableStateOf("") }
     var selectedTemplate by remember { mutableStateOf("blank") }
+    var templateSearch by remember { mutableStateOf("") }
+    var showSnippets by remember { mutableStateOf(false) }
+    var snippetSearch by remember { mutableStateOf("") }
     var previewHtml by remember { mutableStateOf("") }
     var previewUsesReact by remember { mutableStateOf(false) }
     var previewError by remember { mutableStateOf("") }
@@ -366,6 +369,9 @@ private fun StudioApp() {
                             runCatching { historyItems = FileHistory.list(workspace, selectedProject, selectedPath); showHistory = true }
                                 .onFailure { notice = it.message ?: "خواندن تاریخچه ناموفق بود." }
                         }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.History, null); Text("تاریخچه") }
+                        TextButton(onClick = { snippetSearch = ""; showSnippets = true }, enabled = selectedProject.isNotBlank()) {
+                            Icon(Icons.Default.Code, null); Text("کتابخانه کد")
+                        }
                         TextButton(onClick = {
                             val issues = DiagnosticEngine.inspect(selectedPath, editorText)
                             val report = DiagnosticEngine.repairSafeFormatting(editorText)
@@ -489,7 +495,12 @@ private fun StudioApp() {
         text = { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedTextField(draftName, { draftName = it }, label = { Text("نام پروژه") }, singleLine = true)
             Text("قالب شروع", color = Gold, fontWeight = FontWeight.Bold)
-            ProjectTemplates.catalog.forEach { template ->
+            OutlinedTextField(templateSearch, { templateSearch = it }, modifier = Modifier.fillMaxWidth(),
+                singleLine = true, label = { Text("جست‌وجوی قالب") })
+            ProjectTemplates.catalog.filter { template ->
+                template.title.contains(templateSearch, true) || template.description.contains(templateSearch, true) ||
+                    template.platform.contains(templateSearch, true)
+            }.forEach { template ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { selectedTemplate = template.id }) {
                     RadioButton(selected = selectedTemplate == template.id, onClick = { selectedTemplate = template.id })
                     Column {
@@ -509,11 +520,40 @@ private fun StudioApp() {
                     val readme = File(created, "README.md")
                     selectedPath = if (readme.isFile) "README.md" else ProjectTemplates.files(selectedTemplate, name).keys.first()
                     editorText = File(created, selectedPath).takeIf { it.isFile }?.readText().orEmpty()
-                    refreshFiles(); draftName = ""; selectedTemplate = "blank"; showCreateProject = false; page = "ویرایشگر"
+                    refreshFiles(); draftName = ""; selectedTemplate = "blank"; templateSearch = ""; showCreateProject = false; page = "ویرایشگر"
                 }.onFailure { notice = it.message ?: "ساخت پروژه ناموفق بود." }
             }
         }) { Text("ایجاد") } },
         dismissButton = { TextButton(onClick = { showCreateProject = false }) { Text("لغو") } })
+
+    if (showSnippets) AlertDialog(
+        onDismissRequest = { showSnippets = false },
+        title = { Text("کتابخانه کد و اجزای آماده") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.heightIn(max = 480.dp)) {
+                OutlinedTextField(snippetSearch, { snippetSearch = it }, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true, label = { Text("جست‌وجو: React، Kotlin، CSS و ...") })
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(ComponentLibrary.search(snippetSearch)) { snippet ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                editorText = editorText.trimEnd() + if (editorText.isBlank()) snippet.code else "\\n\\n" + snippet.code
+                                showSnippets = false
+                                diagnosticMessage = "قطعه «${snippet.title}» به انتهای فایل اضافه شد؛ برای ذخیره، دکمه ذخیره را بزنید."
+                            },
+                            color = Panel, shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Column(Modifier.padding(10.dp)) {
+                                Text(snippet.title, color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("${snippet.language} · ${snippet.description}", color = Muted, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { showSnippets = false }) { Text("بستن") } }
+    )
 
     if (showRenameProject) AlertDialog(
         onDismissRequest = { showRenameProject = false },
