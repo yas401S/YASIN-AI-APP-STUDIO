@@ -1,0 +1,59 @@
+name: Web Build Pipeline Tests
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+      - name: Test static HTML build output
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/web-fixtures/static/assets
+          printf '<!doctype html><html><body><h1>Static fixture</h1></body></html>' > /tmp/web-fixtures/static/index.html
+          printf 'body{margin:0}' > /tmp/web-fixtures/static/assets/site.css
+          mkdir -p /tmp/web-fixtures/static/dist
+          rsync -a --delete --exclude dist /tmp/web-fixtures/static/ /tmp/web-fixtures/static/dist/
+          test -s /tmp/web-fixtures/static/dist/index.html
+          test -s /tmp/web-fixtures/static/dist/assets/site.css
+      - name: Test real React and Vite production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/web-fixtures/react/src
+          cat > /tmp/web-fixtures/react/package.json <<'JSON'
+          {
+            "name": "studio-react-smoke-test",
+            "private": true,
+            "version": "1.0.0",
+            "type": "module",
+            "scripts": { "build": "vite build" },
+            "dependencies": { "react": "18.3.1", "react-dom": "18.3.1" },
+            "devDependencies": { "vite": "6.1.0" }
+          }
+          JSON
+          cat > /tmp/web-fixtures/react/index.html <<'HTML'
+          <!doctype html><html><head><meta charset="UTF-8"></head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>
+          HTML
+          cat > /tmp/web-fixtures/react/src/main.jsx <<'JS'
+          import React from 'react';
+          import { createRoot } from 'react-dom/client';
+          createRoot(document.getElementById('root')).render(React.createElement('h1', null, 'Vite fixture'));
+          JS
+          cd /tmp/web-fixtures/react
+          npm install --no-audit --no-fund
+          npm run build
+          test -s dist/index.html
+          find dist/assets -type f | grep -q .
+      - name: Report successful smoke tests
+        run: echo "Static and React/Vite production builds passed." >> "$GITHUB_STEP_SUMMARY"
