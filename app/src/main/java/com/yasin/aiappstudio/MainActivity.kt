@@ -64,6 +64,8 @@ class MainActivity : ComponentActivity() {
 
 private data class WorkspaceFile(val file: File, val relative: String, val directory: Boolean)
 
+private data class ChatMessage(val role: String, val content: String)
+
 @Composable
 private fun StudioApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -111,7 +113,25 @@ private fun StudioApp() {
         attachedImageUri = uri
         attachedImageName = uri?.lastPathSegment?.takeLast(48).orEmpty()
     }
+    val chatMessages = remember {
+        mutableStateListOf<ChatMessage>().apply {
+            try {
+                val saved = JSONArray(prefs.getString("ai_chat_history", "[]"))
+                for (i in 0 until saved.length()) {
+                    val item = saved.getJSONObject(i)
+                    val role = item.optString("role")
+                    val content = item.optString("content")
+                    if ((role == "user" || role == "assistant") && content.isNotBlank()) add(ChatMessage(role, content))
+                }
+            } catch (_: Exception) { }
+        }
+    }
     var reply by remember { mutableStateOf("") }
+    fun persistChat() {
+        val saved = JSONArray()
+        chatMessages.takeLast(60).forEach { saved.put(JSONObject().put("role", it.role).put("content", it.content)) }
+        prefs.edit().putString("ai_chat_history", saved.toString()).apply()
+    }
     var usageSummary by remember { mutableStateOf("توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)) }
     var endpoint by remember { mutableStateOf(prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions") ?: "") }
     var model by remember { mutableStateOf(prefs.getString("model", "gpt-4o-mini") ?: "") }
@@ -671,44 +691,115 @@ private fun StudioApp() {
                     }
                     Text("ساخت وب در GitHub انجام می‌شود. پس از موفقیت می‌توانی خروجی واقعی را دریافت و در پیش‌نمایش داخلی باز کنی. برای انتشار آنلاین، تنظیم امن Cloudflare در Secrets و Variables مخزن لازم است.", color = Muted, fontSize = 11.sp)
                 }
-                "هوش مصنوعی" -> Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("دستیار هوشمند", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Text("درخواست برنامه‌نویسی را بنویس یا تصویر نمونه برنامه را پیوست کن.", color = Muted)
-                    OutlinedTextField(prompt, { prompt = it }, modifier = Modifier.fillMaxWidth(), minLines = 4, label = { Text("توضیح برنامه و تغییرات") })
-                    OutlinedButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text(if (attachedImageUri == null) "افزودن عکس طرح یا نمونه برنامه" else "تغییر عکس پیوست‌شده")
+                "هوش مصنوعی" -> Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("گفت‌وگو و ساخت برنامه", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                            Text(if (selectedProject.isBlank()) "ایده‌ات را توضیح بده؛ برای ویرایش فایل‌ها ابتدا پروژه را باز کن." else "پروژه فعال: $selectedProject", color = Muted, fontSize = 11.sp)
+                        }
+                        TextButton(onClick = {
+                            chatMessages.clear()
+                            persistChat()
+                            reply = ""
+                            notice = "گفت‌وگو پاک شد."
+                        }) { Text("گفت‌وگوی جدید") }
+                    }
+                    if (chatMessages.isEmpty()) {
+                        Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("سلام! چه برنامه‌ای بسازیم؟", color = Gold, fontWeight = FontWeight.Bold)
+                                Text("می‌توانی ایده‌ات را بنویسی، عکس طرح را بفرستی، درباره امکانات سؤال کنی یا تغییرات پروژه را مرحله‌به‌مرحله توضیح بدهی.", color = Color.White, fontSize = 13.sp)
+                                Text("نمونه: «یک برنامه مدیریت هزینه با صفحه ورود، نمودار و ذخیره اطلاعات بساز.»", color = Muted, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(chatMessages) { message ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.role == "user") Arrangement.End else Arrangement.Start) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(0.92f),
+                                    colors = CardDefaults.cardColors(containerColor = if (message.role == "user") Color(0xFF183A63) else Panel)
+                                ) {
+                                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(if (message.role == "user") "شما" else "دستیار هوشمند", color = Gold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text(message.content, color = Color.White, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+                        if (loading) item {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("در حال فکر کردن و پاسخ‌گویی...", color = Muted, fontSize = 12.sp)
+                            }
+                        }
                     }
                     if (attachedImageUri != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("عکس پیوست شد: $attachedImageName", color = Gold, modifier = Modifier.weight(1f), fontSize = 11.sp)
-                            TextButton(onClick = { attachedImageUri = null; attachedImageName = "" }) { Text("حذف عکس") }
+                            Icon(Icons.Default.Image, null, tint = Gold)
+                            Text("تصویر پیوست شد: $attachedImageName", color = Gold, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { attachedImageUri = null; attachedImageName = "" }) { Text("حذف") }
                         }
                     }
-                    Button(onClick = {
-                        loading = true
-                        scope.launch {
-                            val result = runCatching {
-                                val imageDataUrl = attachedImageUri?.let { readImageAsDataUrl(context, it) }
-                                askModel(endpoint, model, apiKey, prompt, imageDataUrl)
-                            }.getOrElse { AiCallResult("خواندن یا ارسال عکس ناموفق بود: " + (it.message ?: "خطای نامشخص")) }
-                            reply = result.text
-                            result.usage?.let { usage ->
-                                prefs.edit()
-                                    .putLong("usage_prompt", prefs.getLong("usage_prompt", 0L) + usage.promptTokens)
-                                    .putLong("usage_completion", prefs.getLong("usage_completion", 0L) + usage.completionTokens)
-                                    .putLong("usage_total", prefs.getLong("usage_total", 0L) + usage.totalTokens)
-                                    .apply()
-                                usageSummary = "توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)
-                            }
-                            loading = false
+                    OutlinedTextField(
+                        value = prompt,
+                        onValueChange = { prompt = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                        maxLines = 5,
+                        label = { Text("پیامت را بنویس؛ مثلاً چه برنامه‌ای بسازم؟") }
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.AddPhotoAlternate, null)
+                            Spacer(Modifier.width(5.dp))
+                            Text("ارسال عکس")
                         }
-                    }, enabled = !loading && (prompt.isNotBlank() || attachedImageUri != null) && apiKey.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                        if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Send, null)
-                        Spacer(Modifier.width(8.dp)); Text(if (loading) "در حال پاسخ..." else "ارسال درخواست")
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val userText = prompt.trim().ifBlank { "لطفاً این تصویر را بررسی کن و درباره برنامه‌ای که نشان می‌دهد با من گفتگو کن." }
+                                val imageUri = attachedImageUri
+                                chatMessages.add(ChatMessage("user", userText + if (imageUri != null) "\n[تصویر پیوست‌شده]" else ""))
+                                persistChat()
+                                prompt = ""
+                                attachedImageUri = null
+                                attachedImageName = ""
+                                loading = true
+                                scope.launch {
+                                    val result = runCatching {
+                                        val imageDataUrl = imageUri?.let { readImageAsDataUrl(context, it) }
+                                        askModel(endpoint, model, apiKey, userText, imageDataUrl, chatMessages.toList().dropLast(1))
+                                    }.getOrElse { AiCallResult("ارسال پیام ناموفق بود: " + (it.message ?: "خطای نامشخص")) }
+                                    chatMessages.add(ChatMessage("assistant", result.text))
+                                    persistChat()
+                                    reply = result.text
+                                    result.usage?.let { usage ->
+                                        prefs.edit()
+                                            .putLong("usage_prompt", prefs.getLong("usage_prompt", 0L) + usage.promptTokens)
+                                            .putLong("usage_completion", prefs.getLong("usage_completion", 0L) + usage.completionTokens)
+                                            .putLong("usage_total", prefs.getLong("usage_total", 0L) + usage.totalTokens)
+                                            .apply()
+                                        usageSummary = "توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)
+                                    }
+                                    loading = false
+                                }
+                            },
+                            enabled = !loading && (prompt.isNotBlank() || attachedImageUri != null) && apiKey.isNotBlank(),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.Send, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("ارسال پیام")
+                        }
                     }
-                    if (usageSummary.isNotBlank()) Text(usageSummary, color = Gold, fontSize = 11.sp)
-                    if (reply.isNotBlank()) Card(colors = CardDefaults.cardColors(containerColor = Panel)) { Text(reply, Modifier.padding(14.dp), color = Color.White) }
-                    if (apiKey.isBlank()) Text("برای فعال‌سازی، تنظیمات API را کامل کنید.", color = Gold, fontSize = 12.sp)
+                    if (usageSummary.isNotBlank()) Text(usageSummary, color = Gold, fontSize = 10.sp)
+                    if (apiKey.isBlank()) Text("برای گفتگو، ابتدا آدرس API، مدل و کلید را در تنظیمات وارد و ذخیره کن.", color = Gold, fontSize = 11.sp)
                 }
                 else -> Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("تنظیمات هوش مصنوعی", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -935,7 +1026,7 @@ private suspend fun readImageAsDataUrl(context: android.content.Context, uri: Ur
     "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
 }
 
-private suspend fun askModel(endpoint: String, model: String, key: String, prompt: String, imageDataUrl: String? = null): AiCallResult = withContext(Dispatchers.IO) {
+private suspend fun askModel(endpoint: String, model: String, key: String, prompt: String, imageDataUrl: String? = null, history: List<ChatMessage> = emptyList()): AiCallResult = withContext(Dispatchers.IO) {
     if (endpoint.isBlank() || model.isBlank() || key.isBlank()) return@withContext AiCallResult("ابتدا تنظیمات اتصال را کامل کنید.")
     if (prompt.toByteArray(Charsets.UTF_8).size > 64 * 1024) {
         return@withContext AiCallResult("متن درخواست بیش از ۶۴ کیلوبایت است؛ آن را کوتاه‌تر کنید.")
@@ -952,12 +1043,18 @@ private suspend fun askModel(endpoint: String, model: String, key: String, promp
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer $key")
         }
+        val messages = JSONArray()
+            .put(JSONObject().put("role", "system").put("content", "You are a helpful Persian-speaking conversational software design assistant. Maintain context across turns. Discuss ideas naturally, ask concise clarifying questions when needed, and help plan Android, web, and game projects. When an image is attached, analyze its visible design and explain how to implement it. Never claim that project files were created or changed unless the app actually applied those changes."))
+        history.takeLast(20).forEach { item ->
+            if (item.role == "user" || item.role == "assistant") {
+                messages.put(JSONObject().put("role", item.role).put("content", item.content.take(12000)))
+            }
+        }
         val userContent: Any = if (imageDataUrl.isNullOrBlank()) prompt else JSONArray()
-            .put(JSONObject().put("type", "text").put("text", prompt.ifBlank { "این تصویر را تحلیل کن و برای تبدیل آن به یک برنامه اندرویدی، ساختار صفحه‌ها و اجزای لازم را توضیح بده." }))
+            .put(JSONObject().put("type", "text").put("text", prompt.ifBlank { "این تصویر را تحلیل کن و درباره ساخت برنامه‌ای مشابه با من گفتگو کن." }))
             .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageDataUrl)))
-        val payload = JSONObject().put("model", model).put("messages",
-            JSONArray().put(JSONObject().put("role", "system").put("content", "You are a careful software engineering assistant. When given a UI image, analyze visible layout, controls, colors, and likely interactions. Do not claim files were created unless they actually were."))
-                .put(JSONObject().put("role", "user").put("content", userContent)))
+        messages.put(JSONObject().put("role", "user").put("content", userContent))
+        val payload = JSONObject().put("model", model).put("messages", messages)
         conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
         val status = conn.responseCode
         val stream = if (status in 200..299) conn.inputStream else conn.errorStream
