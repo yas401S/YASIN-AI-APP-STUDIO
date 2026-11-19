@@ -226,6 +226,7 @@ private fun StudioApp() {
         runCatching {
             require(selectedProject.isNotBlank()) { "ابتدا یک پروژه را انتخاب کن." }
             WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, editorText)
+            savedEditorText = editorText
             refreshFiles()
             val root = File(workspace, selectedProject)
             val webEntry = File(root, "index.html").isFile || File(root, "dist/index.html").isFile
