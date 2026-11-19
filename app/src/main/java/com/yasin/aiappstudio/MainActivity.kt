@@ -106,7 +106,7 @@ private fun StudioApp() {
     var usageSummary by remember { mutableStateOf("توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)) }
     var endpoint by remember { mutableStateOf(prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions") ?: "") }
     var model by remember { mutableStateOf(prefs.getString("model", "gpt-4o-mini") ?: "") }
-    var apiKey by remember { mutableStateOf(prefs.getString("key", "") ?: "") }
+    var apiKey by remember { mutableStateOf(SecureSecretStore.read(context)) }
     var loading by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -434,10 +434,10 @@ private fun StudioApp() {
                     OutlinedTextField(endpoint, { endpoint = it }, modifier = Modifier.fillMaxWidth(), label = { Text("آدرس API") }, singleLine = true)
                     OutlinedTextField(model, { model = it }, modifier = Modifier.fillMaxWidth(), label = { Text("نام مدل") }, singleLine = true)
                     OutlinedTextField(apiKey, { apiKey = it }, modifier = Modifier.fillMaxWidth(), label = { Text("کلید API") }, singleLine = true)
-                    Button(onClick = { prefs.edit().putString("endpoint", endpoint).putString("model", model).putString("key", apiKey).apply(); notice = "تنظیمات ذخیره شد." }, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { prefs.edit().putString("endpoint", endpoint).putString("model", model).apply(); SecureSecretStore.write(context, apiKey); notice = "تنظیمات ذخیره شد؛ کلید با Android Keystore رمزگذاری شد." }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Save, null); Text("ذخیره تنظیمات")
                     }
-                    Text("هشدار: نگهداری مستقیم کلید در برنامه فقط برای آزمایش شخصی است. نسخه عمومی باید از درگاه امن سمت سرور استفاده کند.", color = Gold, fontSize = 12.sp)
+                    Text("کلید در حافظه امن Android Keystore رمزگذاری می‌شود؛ بااین‌حال برای انتشار عمومی، کلید ارائه‌دهنده باید فقط در سرور نگهداری شود و از درگاه واسط امن استفاده شود.", color = Gold, fontSize = 12.sp)
                 }
             }
             NavigationBar(containerColor = Panel) {
