@@ -32,8 +32,10 @@ object StaticPreviewRenderer {
         }
         val html = htmlFile.readText()
         val policy = """<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-src 'none'">"""
-        return if (Regex("(?i)<head\\b[^>]*>").containsMatchIn(html)) {
-            Regex("(?i)<head\\b[^>]*>").replaceFirst(html) { it.value + policy }
+        val headMatch = Regex("(?i)<head\\b[^>]*>").find(html)
+        return if (headMatch != null) {
+            val insertAt = headMatch.range.last + 1
+            html.substring(0, insertAt) + policy + html.substring(insertAt)
         } else {
             policy + html
         }
