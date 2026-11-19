@@ -125,8 +125,8 @@ export default {
       // Cloudflare JSON Mode and is substantially more reliable for file generation.
       const model = image ? VISION_MODEL : CODE_MODEL;
       const aiInput = { messages, max_tokens: maxTokens, temperature: 0.15 };
-      if (!image && input.response_format?.type === "json_object") {
-        aiInput.response_format = { type: "json_object" };
+      if (!image && ["json_object", "json_schema"].includes(input.response_format?.type)) {
+        aiInput.response_format = input.response_format;
       }
       // Keep image_url inside message content for the vision model.
       const result = await env.AI.run(model, aiInput);
