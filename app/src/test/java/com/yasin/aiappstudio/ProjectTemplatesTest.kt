@@ -12,6 +12,9 @@ class ProjectTemplatesTest {
         assertTrue(files.containsKey("app/build.gradle.kts"))
         assertTrue(files.containsKey(".github/workflows/android.yml"))
         assertTrue(files.getValue(".github/workflows/android.yml").contains("assembleDebug"))
+        assertTrue(files.getValue(".github/workflows/android.yml").contains("bundleRelease"))
+        assertTrue(files.getValue(".github/workflows/android.yml").contains("ANDROID_KEYSTORE_BASE64"))
+        assertTrue(files.getValue("app/build.gradle.kts").contains("signingConfigs"))
         assertTrue(files.containsKey("app/src/main/AndroidManifest.xml"))
         val main = files.entries.first { it.key.endsWith("/MainActivity.kt") }
         assertTrue(main.value.contains("ComponentActivity"))
