@@ -670,7 +670,7 @@ private fun StudioApp() {
                     }
                     if (builtApkFile?.isFile == true) {
                         Button(onClick = { installBuiltApk() }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.InstallMobile, null); Spacer(Modifier.width(8.dp)); Text("نصب و اجرای APK روی گوشی")
+                            Icon(Icons.Default.GetApp, null); Spacer(Modifier.width(8.dp)); Text("نصب و اجرای APK روی گوشی")
                         }
                     }
                     if (buildSucceeded && buildRunId > 0L) {
