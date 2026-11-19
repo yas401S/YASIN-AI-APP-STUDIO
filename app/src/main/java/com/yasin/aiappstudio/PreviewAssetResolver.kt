@@ -1,15 +1,13 @@
 package com.yasin.aiappstudio
 
 import java.io.File
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 
 /** Resolves only GET-able files contained in the selected project preview root. */
 object PreviewAssetResolver {
     fun resolveFile(root: File, requestPath: String): File? = runCatching {
         val canonicalRoot = root.canonicalFile
         if (!canonicalRoot.isDirectory) return null
-        val decoded = URLDecoder.decode(requestPath, StandardCharsets.UTF_8.name())
+        val decoded = requestPath
         if (decoded.isBlank() || decoded.contains(0.toChar())) return null
         val relative = decoded.removePrefix("/")
         if (relative.isBlank()) return null
