@@ -116,7 +116,9 @@ private fun StudioApp() {
         else emptyList()
     }
     fun loadProjectPreview() {
-        previewUsesReact = ReactPreviewRenderer.isReactProject(workspace, selectedProject)
+        val projectRoot = File(workspace, selectedProject)
+        val hasBuiltWebOutput = File(projectRoot, "dist/index.html").isFile
+        previewUsesReact = !hasBuiltWebOutput && ReactPreviewRenderer.isReactProject(workspace, selectedProject)
         previewHtml = if (previewUsesReact) {
             ReactPreviewRenderer.render(workspace, selectedProject)
         } else {
