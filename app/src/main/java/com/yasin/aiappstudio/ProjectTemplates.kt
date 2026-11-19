@@ -15,7 +15,7 @@ object ProjectTemplates {
     fun files(templateId: String, projectName: String): Map<String, String> {
         val safeTitle = projectName.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$")
         val slug = projectName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(48).ifBlank { "new-project" }
-        val appId = "com.yasin.generated." + slug.replace('-', '_')
+        val appId = "com.yasin.generated.app_" + slug.replace('-', '_')
         val packagePath = appId.replace('.', '/')
         return when (templateId) {
             "blank" -> mapOf("README.md" to "# $projectName\n\nساخته‌شده با YASIN AI APP STUDIO.\n")
