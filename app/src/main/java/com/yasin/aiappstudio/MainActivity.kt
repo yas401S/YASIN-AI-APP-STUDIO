@@ -784,7 +784,7 @@ private fun StudioApp() {
                                 }.getOrDefault("")
                                 val result = runCatching {
                                     val imageData = imageUri?.let { uri ->
-                                        prepareStudioImage(context, uri)
+                                        withContext(Dispatchers.IO) { prepareStudioImage(context, uri) }
                                     }
                                     if (imageData != null) {
                                         visionStage = "مرحله ۱ از ۲: در حال تحلیل تصویر و استخراج اجزای بصری..."
