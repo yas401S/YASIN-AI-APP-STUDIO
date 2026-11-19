@@ -702,7 +702,7 @@ private fun StudioApp() {
                             }
                             loading = false
                         }
-                    }, enabled = !loading && prompt.isNotBlank() && apiKey.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                    }, enabled = !loading && (prompt.isNotBlank() || attachedImageUri != null) && apiKey.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                         if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Send, null)
                         Spacer(Modifier.width(8.dp)); Text(if (loading) "در حال پاسخ..." else "ارسال درخواست")
                     }
