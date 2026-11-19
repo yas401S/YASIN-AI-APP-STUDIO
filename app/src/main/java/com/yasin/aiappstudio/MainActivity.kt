@@ -13,6 +13,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -75,6 +76,17 @@ private fun StudioApp() {
     val prefs = remember { context.getSharedPreferences("studio", 0) }
     val workspace = remember { File(context.filesDir, "workspace").apply { mkdirs() } }
     var page by remember { mutableStateOf("خانه") }
+    val pageHistory = remember { mutableStateListOf<String>() }
+    fun navigateTo(target: String) {
+        if (target != page) {
+            pageHistory.add(page)
+            page = target
+        }
+    }
+    fun goBack() {
+        page = if (pageHistory.isNotEmpty()) pageHistory.removeAt(pageHistory.lastIndex) else "خانه"
+    }
+    BackHandler(enabled = page != "خانه") { goBack() }
     val projects = remember {
         mutableStateListOf<String>().apply {
             try {
@@ -189,7 +201,7 @@ private fun StudioApp() {
         runCatching {
             selectedPath = relative
             editorText = WorkspaceManager(workspace).readFile(selectedProject, relative)
-            page = "ویرایشگر"
+            navigateTo("ویرایشگر")
         }.onFailure { notice = it.message ?: "بازکردن فایل ناموفق بود." }
     }
     fun saveFile() {
@@ -251,7 +263,13 @@ private fun StudioApp() {
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().background(Panel).padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AutoAwesome, null, tint = Gold, modifier = Modifier.size(28.dp))
+                if (page != "خانه") {
+                    IconButton(onClick = { goBack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "بازگشت", tint = Gold)
+                    }
+                } else {
+                    Icon(Icons.Default.AutoAwesome, null, tint = Gold, modifier = Modifier.size(28.dp))
+                }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("YASIN AI APP STUDIO", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
@@ -273,7 +291,7 @@ private fun StudioApp() {
                         }
                     }
                     listOf("پروژه‌ها" to "مدیریت پروژه‌ها و پوشه‌ها", "ویرایشگر" to "مدیریت فایل و کد", "هوش مصنوعی" to "دستیار برنامه‌نویسی", "ساخت APK" to "ساخت و دریافت فایل نصب اندروید", "تنظیمات" to "تنظیم اتصال مدل").forEach { item ->
-                        Card(Modifier.fillMaxWidth().clickable { page = if (item.first == "ساخت APK") "GitHub" else item.first }, colors = CardDefaults.cardColors(containerColor = Panel)) {
+                        Card(Modifier.fillMaxWidth().clickable { navigateTo(if (item.first == "ساخت APK") "GitHub" else item.first) }, colors = CardDefaults.cardColors(containerColor = Panel)) {
                             Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(item.first, color = Color.White, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.weight(1f))
@@ -296,7 +314,7 @@ private fun StudioApp() {
                             Text("پروژه فعال: $selectedProject", color = Gold, modifier = Modifier.weight(1f))
                             TextButton(onClick = { showCreateEntry = true }) { Text("فایل/پوشه جدید") }
                             TextButton(onClick = {
-                                runCatching { loadProjectPreview(); page = "پیش‌نمایش" }
+                                runCatching { loadProjectPreview(); navigateTo("پیش‌نمایش") }
                                     .onFailure { previewError = it.message ?: "ساخت پیش‌نمایش ناموفق بود."; notice = previewError }
                             }) { Text("پیش‌نمایش وب") }
                         }
@@ -717,7 +735,7 @@ private fun StudioApp() {
                                         selectedProject = webBuildProjectName
                                         refreshFiles()
                                         loadProjectPreview()
-                                        page = "پیش‌نمایش"
+                                        navigateTo("پیش‌نمایش")
                                     }.onSuccess {
                                         webBuildStatus = "خروجی دریافت شد؛ پیش‌نمایش محلی آماده است."
                                     }.onFailure {
@@ -949,7 +967,7 @@ private fun StudioApp() {
             }
             NavigationBar(containerColor = Panel) {
                 listOf("خانه", "پروژه‌ها", "GitHub", "هوش مصنوعی", "ویرایشگر", "پیش‌نمایش", "تنظیمات").forEach { label ->
-                    NavigationBarItem(selected = page == label, onClick = { page = label },
+                    NavigationBarItem(selected = page == label, onClick = { navigateTo(label) },
                         icon = { Icon(when (label) {
                             "خانه" -> Icons.Default.Home
                             "پروژه‌ها" -> Icons.Default.Folder
@@ -1063,7 +1081,7 @@ private fun StudioApp() {
                     val readme = File(created, "README.md")
                     selectedPath = if (readme.isFile) "README.md" else ProjectTemplates.files(selectedTemplate, name).keys.first()
                     editorText = File(created, selectedPath).takeIf { it.isFile }?.readText().orEmpty()
-                    refreshFiles(); draftName = ""; selectedTemplate = "blank"; templateSearch = ""; showCreateProject = false; page = "ویرایشگر"
+                    refreshFiles(); draftName = ""; selectedTemplate = "blank"; templateSearch = ""; showCreateProject = false; navigateTo("ویرایشگر")
                 }.onFailure { notice = it.message ?: "ساخت پروژه ناموفق بود." }
             }
         }) { Text("ایجاد") } },
