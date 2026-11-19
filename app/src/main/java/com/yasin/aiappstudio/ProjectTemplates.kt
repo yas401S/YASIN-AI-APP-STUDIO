@@ -555,13 +555,13 @@ jobs:
       - name: Install Godot 4.3 and export templates
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable" artifacts
+          mkdir -p "${dollar}HOME/.local/share/godot/export_templates/4.3.stable" artifacts
           wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip -O /tmp/godot.zip
           unzip -q /tmp/godot.zip -d /tmp/godot
           sudo install -m 0755 /tmp/godot/Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
           wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz -O /tmp/templates.tpz
           unzip -q /tmp/templates.tpz -d /tmp/godot-templates
-          cp /tmp/godot-templates/templates/* "$HOME/.local/share/godot/export_templates/4.3.stable/"
+          cp /tmp/godot-templates/templates/* "${dollar}HOME/.local/share/godot/export_templates/4.3.stable/"
       - name: Import and validate game project
         run: godot --headless --editor --path . --quit
       - name: Export Linux game
