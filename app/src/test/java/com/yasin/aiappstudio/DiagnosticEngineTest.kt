@@ -18,4 +18,32 @@ class DiagnosticEngineTest {
         val clean = "val answer = 42\n"
         assertEquals(clean, DiagnosticEngine.repairSafeFormatting(clean).content)
     }
+    @Test fun detectsUnbalancedDelimitersButIgnoresStringsAndComments() {
+        val source = """fun main() {
+    val text = "this ) is not code"
+    // this } is a comment
+    println(text
+}
+"""
+        val issues = DiagnosticEngine.inspect("Main.kt", source)
+        assertTrue(issues.any { it.message.contains("بسته نشده") })
+        assertFalse(issues.any { it.message.contains("نامتطابق") })
+    }
+
+    @Test fun detectsMismatchedDelimitersAndMergeConflictMarkers() {
+        val source = """const value = [1, 2);
+<<<<<<< branch-a
+=======
+>>>>>>> branch-b
+"""
+        val issues = DiagnosticEngine.inspect("main.js", source)
+        assertTrue(issues.any { it.message.contains("نامتطابق") })
+        assertEquals(3, issues.count { it.message.contains("تعارض Git") })
+    }
+
+    @Test fun doesNotRunDelimiterChecksOnPlainTextFiles() {
+        val issues = DiagnosticEngine.inspect("notes.txt", "text with ( unmatched")
+        assertFalse(issues.any { it.message.contains("بسته نشده") })
+    }
+
 }
