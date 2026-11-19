@@ -69,8 +69,6 @@ class MainActivity : ComponentActivity() {
 }
 
 private data class WorkspaceFile(val file: File, val relative: String, val directory: Boolean)
-private data class StudioChatMessage(val role: String, val content: String)
-private data class StudioFilePatch(val path: String, val content: String)
 
 @Composable
 private fun StudioApp() {
@@ -1237,89 +1235,7 @@ private fun StudioApp() {
 
 private fun prepareStudioImage(context: Context, uri: Uri): String {
     val resolver = context.contentResolver
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        ?: error("خواندن تصویر ناموفق بود.")
-    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "فایل تصویر معتبر نیست." }
-
-    var sample = 1
-    while (maxOf(bounds.outWidth / sample, bounds.outHeight / sample) > 1600) sample *= 2
-    val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.RGB_565 }
-    val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
-        ?: error("رمزگشایی تصویر ناموفق بود.")
-    val output = java.io.ByteArrayOutputStream()
-    try {
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 82, output)
-        val bytes = output.toByteArray()
-        require(bytes.isNotEmpty() && bytes.size <= 5 * 1024 * 1024) {
-            "آماده‌سازی تصویر ناموفق بود؛ لطفاً تصویر دیگری انتخاب کن."
-        }
-        return "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-    } finally {
-        bitmap.recycle()
-        output.close()
-    }
-}
-
-private suspend fun analyzeStudioImage(
-    endpoint: String, model: String, key: String, imageDataUrl: String
-): String = withContext(Dispatchers.IO) {
-    require(endpoint.isNotBlank() && model.isNotBlank()) { "نشانی اتصال مدل بینایی تنظیم نشده است." }
-    val safeEndpoint = AiEndpointPolicy.validate(endpoint)
-    var conn: HttpURLConnection? = null
-    try {
-        conn = (URL(safeEndpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20000
-            readTimeout = 120000
-            doOutput = true
-            instanceFollowRedirects = false
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
-            if (key.isNotBlank()) setRequestProperty("Authorization", "Bearer $key")
-        }
-        val messages = JSONArray()
-        messages.put(JSONObject().put("role", "system").put("content",
-            "You are a senior computer-vision and UI reverse-engineering specialist. Inspect the supplied image carefully. Return STRICT JSON only: {\"analysis\":\"...\"}. Describe visible screen structure, hierarchy, components, spacing, alignment, colors with approximate hex values, typography, icons, controls, navigation, states, interactions inferable from the image, and responsive behavior. Separate observed facts from uncertain assumptions. Be detailed enough that a coding agent can recreate the interface. Do not return source code."))
-        val content = JSONArray()
-            .put(JSONObject().put("type", "text").put("text", "تحلیل بینایی دقیق این تصویر را انجام بده. تمام اجزای قابل مشاهده و ساختار صفحه را برای بازسازی دقیق استخراج کن."))
-            .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageDataUrl)))
-        messages.put(JSONObject().put("role", "user").put("content", content))
-        val payload = JSONObject().put("model", model).put("messages", messages)
-            .put("response_format", JSONObject().put("type", "json_object"))
-        conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-        val status = conn.responseCode
-        val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-        val raw = stream.bufferedReader().use { it.readText().take(2 * 1024 * 1024) }
-        if (status !in 200..299) error("خطای سرویس بینایی ($status): " + raw.take(700))
-        val response = JSONObject(raw)
-        val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
-        val cleaned = message.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val structuredAnalysis = runCatching { JSONObject(cleaned).optString("analysis") }.getOrNull()
-        structuredAnalysis?.takeIf { it.isNotBlank() }
-            ?: cleaned.takeIf { it.isNotBlank() }
-            ?: error("مدل بینایی تحلیل قابل استفاده‌ای برنگرداند.")
-    } finally {
-        conn?.disconnect()
-    }
-}
-
-private fun safeName(value: String): String = value.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(70).ifBlank { "project" }
-
-private fun safeChild(root: File, relative: String): File? {
-    val base = root.canonicalFile
-    val target = File(base, relative).canonicalFile
-    return if (target.path == base.path || target.path.startsWith(base.path + File.separator)) target else null
-}
-
-private data class AiCallResult(val text: String, val usage: AiUsage? = null)
-
-
-private data class StudioAiResult(val reply: String, val summary: String = "", val patches: List<StudioFilePatch> = emptyList(), val usage: AiUsage? = null)
-
-private suspend fun askStudioModel(
-    endpoint: String, model: String, key: String, prompt: String,
-    history: List<StudioChatMessage>, projectContext: String, imageDataUrl: String?
+    val bounds = BitmapFactory.Optionstext: String, imageDataUrl: String?
 ): StudioAiResult = withContext(Dispatchers.IO) {
     if (endpoint.isBlank() || model.isBlank()) return@withContext StudioAiResult("نشانی اتصال هوش مصنوعی تنظیم نشده است.")
     val safeEndpoint = runCatching { AiEndpointPolicy.validate(endpoint) }.getOrElse {
