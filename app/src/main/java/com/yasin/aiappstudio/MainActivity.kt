@@ -272,8 +272,8 @@ private fun StudioApp() {
                             }
                         }
                     }
-                    listOf("پروژه‌ها" to "مدیریت پروژه‌ها و پوشه‌ها", "ویرایشگر" to "مدیریت فایل و کد", "هوش مصنوعی" to "دستیار برنامه‌نویسی", "تنظیمات" to "تنظیم اتصال مدل").forEach { item ->
-                        Card(Modifier.fillMaxWidth().clickable { page = item.first }, colors = CardDefaults.cardColors(containerColor = Panel)) {
+                    listOf("پروژه‌ها" to "مدیریت پروژه‌ها و پوشه‌ها", "ویرایشگر" to "مدیریت فایل و کد", "هوش مصنوعی" to "دستیار برنامه‌نویسی", "ساخت APK" to "ساخت و دریافت فایل نصب اندروید", "تنظیمات" to "تنظیم اتصال مدل").forEach { item ->
+                        Card(Modifier.fillMaxWidth().clickable { page = if (item.first == "ساخت APK") "GitHub" else item.first }, colors = CardDefaults.cardColors(containerColor = Panel)) {
                             Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(item.first, color = Color.White, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.weight(1f))
