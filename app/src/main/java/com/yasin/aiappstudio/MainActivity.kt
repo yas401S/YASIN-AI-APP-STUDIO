@@ -746,7 +746,7 @@ private fun StudioApp() {
                             scope.launch {
                                 val projectContext = if (selectedProject.isBlank()) "" else runCatching {
                                     val root = File(workspace, selectedProject)
-                                    root.walkTopDown().filter { it.isFile && !it.relativeTo(root).path.split(File.separator).any { part -> part.startsWith(".") } }
+                                    root.walkTopDown().filter { it.isFile && it.extension.lowercase() in setOf("kt", "java", "xml", "gradle", "kts", "properties", "json", "js", "jsx", "ts", "tsx", "html", "css", "md", "txt", "py") && !it.relativeTo(root).path.split(File.separator).any { part -> part.startsWith(".") } }
                                         .take(35).joinToString("\n") { file ->
                                             val rel = file.relativeTo(root).invariantSeparatorsPath
                                             "FILE: $rel\n" + if (file.length() <= 24000) file.readText().take(24000) else "[فایل بزرگ؛ محتوا ارسال نشد]"
