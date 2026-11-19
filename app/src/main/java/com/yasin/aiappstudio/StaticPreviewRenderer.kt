@@ -30,6 +30,12 @@ object StaticPreviewRenderer {
         require(htmlFile.length() <= MAX_HTML_BYTES) {
             "حجم index.html برای پیش‌نمایش بیش از حد مجاز است."
         }
-        return htmlFile.readText()
+        val html = htmlFile.readText()
+        val policy = """<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-src 'none'">"""
+        return if (Regex("(?i)<head\\b[^>]*>").containsMatchIn(html)) {
+            Regex("(?i)<head\\b[^>]*>").replaceFirst(html) { it.value + policy }
+        } else {
+            policy + html
+        }
     }
 }
