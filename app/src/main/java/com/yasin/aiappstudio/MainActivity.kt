@@ -98,6 +98,10 @@ private fun StudioApp() {
     var selectedProject by remember { mutableStateOf("") }
     var selectedPath by remember { mutableStateOf("README.md") }
     var editorText by remember { mutableStateOf("") }
+    var savedEditorText by remember { mutableStateOf("") }
+    var editorFind by remember { mutableStateOf("") }
+    var editorReplace by remember { mutableStateOf("") }
+    var editorMatchCount by remember { mutableIntStateOf(0) }
     var diagnosticMessage by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf(listOf<Pair<String, String>>()) }
@@ -203,12 +207,17 @@ private fun StudioApp() {
         runCatching {
             selectedPath = relative
             editorText = WorkspaceManager(workspace).readFile(selectedProject, relative)
+            savedEditorText = editorText
+            editorFind = ""
+            editorReplace = ""
+            editorMatchCount = 0
             navigateTo("ویرایشگر")
         }.onFailure { notice = it.message ?: "بازکردن فایل ناموفق بود." }
     }
     fun saveFile() {
         runCatching {
             WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, editorText)
+            savedEditorText = editorText
             notice = "فایل ذخیره شد و نسخه قبلی در تاریخچه ثبت شد."
             refreshFiles()
         }.onFailure { notice = "ذخیره فایل ناموفق بود: " + (it.message ?: "خطا") }
@@ -491,6 +500,7 @@ private fun StudioApp() {
                         Column(Modifier.weight(1f)) {
                             Text("ویرایشگر کد", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                             Text("$selectedProject / $selectedPath", color = Muted, fontSize = 11.sp)
+                            Text(if (editorText != savedEditorText) "● تغییرات ذخیره‌نشده" else "✓ همه تغییرات ذخیره شده‌اند", color = if (editorText != savedEditorText) Gold else Color(0xFF70D6A0), fontSize = 10.sp)
                         }
                         TextButton(onClick = {
                             runCatching { historyItems = FileHistory.list(workspace, selectedProject, selectedPath); showHistory = true }
@@ -521,10 +531,57 @@ private fun StudioApp() {
                         }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Build, null); Text("بررسی و اصلاح امن") }
                         Button(onClick = { saveFile() }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Save, null); Text("ذخیره") }
                     }
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(
+                                value = editorFind,
+                                onValueChange = { value ->
+                                    editorFind = value
+                                    editorMatchCount = if (value.isBlank()) 0 else Regex(Regex.escape(value), RegexOption.IGNORE_CASE).findAll(editorText).count()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                label = { Text("جست‌وجو در فایل باز") }
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = editorReplace,
+                                    onValueChange = { editorReplace = it },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    label = { Text("جایگزینی با") }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        if (editorFind.isBlank()) {
+                                            notice = "عبارت جست‌وجو را وارد کن."
+                                        } else {
+                                            val regex = Regex(Regex.escape(editorFind), RegexOption.IGNORE_CASE)
+                                            val count = regex.findAll(editorText).count()
+                                            editorText = regex.replace(editorText) { editorReplace }
+                                            editorMatchCount = 0
+                                            notice = "$count مورد در ویرایشگر جایگزین شد؛ برای ثبت در فایل ذخیره را بزن."
+                                        }
+                                    },
+                                    enabled = editorFind.isNotBlank() && editorMatchCount > 0
+                                ) { Text("جایگزین همه") }
+                            }
+                            Text(
+                                if (editorFind.isBlank()) "جست‌وجو و جایگزینی فقط روی فایل باز انجام می‌شود."
+                                else "$editorMatchCount مورد پیدا شد",
+                                color = Muted,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
                     Button(onClick = { saveAndRunCurrentProject() }, enabled = selectedProject.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("ذخیره و اجرای زنده / ساخت APK")
                     }
-                    BasicTextField(value = editorText, onValueChange = { editorText = it },
+                    BasicTextField(value = editorText, onValueChange = {
+                        editorText = it
+                        editorMatchCount = if (editorFind.isBlank()) 0 else Regex(Regex.escape(editorFind), RegexOption.IGNORE_CASE).findAll(it).count()
+                    },
                         modifier = Modifier.fillMaxSize().weight(1f).background(Color(0xFF050D18), RoundedCornerShape(10.dp)).padding(14.dp),
                         textStyle = TextStyle(color = Color(0xFFB8D8FF), fontSize = 13.sp, lineHeight = 20.sp))
                     if (diagnosticMessage.isNotBlank()) Text(diagnosticMessage, color = Gold, fontSize = 11.sp)
