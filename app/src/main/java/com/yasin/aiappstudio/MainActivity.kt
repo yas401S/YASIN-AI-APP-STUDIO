@@ -118,6 +118,10 @@ private fun StudioApp() {
     var buildRunUrl by remember { mutableStateOf("") }
     var buildBusy by remember { mutableStateOf(false) }
     var webBuildBranch by remember { mutableStateOf("") }
+    var webBuildProjectSlug by remember { mutableStateOf("") }
+    var webBuildProjectName by remember { mutableStateOf("") }
+    var webBuildArtifactId by remember { mutableStateOf<Long?>(null) }
+    var cloudflarePreviewUrl by remember { mutableStateOf("") }
     var webBuildStatus by remember { mutableStateOf("هنوز ساخت وب اجرا نشده است.") }
     var webBuildRunUrl by remember { mutableStateOf("") }
     var webBuildBusy by remember { mutableStateOf(false) }
@@ -564,8 +568,12 @@ private fun StudioApp() {
                                             githubToken, File(workspace, selectedProject), selectedProject
                                         )
                                     }
-                                }.onSuccess { createdBranch ->
-                                    webBuildBranch = createdBranch
+                                }.onSuccess { submission ->
+                                    webBuildBranch = submission.branch
+                                    webBuildProjectSlug = submission.projectSlug
+                                    webBuildProjectName = selectedProject
+                                    webBuildArtifactId = null
+                                    cloudflarePreviewUrl = ""
                                     webBuildRunUrl = ""
                                     webBuildStatus = "پروژه وب ارسال شد و Build ابری آغاز شد؛ وضعیت را بررسی کن."
                                 }.onFailure {
@@ -586,16 +594,24 @@ private fun StudioApp() {
                             webBuildBusy = true
                             scope.launch {
                                 runCatching {
-                                    withContext(Dispatchers.IO) { GitHubWebBuild.latestBuild(githubToken, webBuildBranch) }
+                                    withContext(Dispatchers.IO) {
+                                        GitHubWebBuild.latestBuild(githubToken, webBuildBranch, webBuildProjectSlug)
+                                    }
                                 }.onSuccess { run ->
                                     if (run == null) {
                                         webBuildStatus = "اجرای Build هنوز در GitHub ثبت نشده است؛ کمی بعد دوباره بررسی کن."
                                     } else {
                                         webBuildRunUrl = run.htmlUrl
+                                        webBuildArtifactId = run.artifactId
+                                        cloudflarePreviewUrl = run.previewUrl.orEmpty()
                                         webBuildStatus = when {
                                             run.status != "completed" -> "Build وب در حال اجراست: " + run.status
-                                            run.conclusion == "success" -> "Build وب موفق شد؛ خروجی dist در Artifact قرار دارد."
-                                            else -> "Build وب ناموفق بود: " + (run.conclusion ?: "نامشخص") + "؛ گزارش را باز کن."
+                                            run.buildSucceeded && run.previewUrl != null -> "ساخت موفق شد و پیش‌نمایش Cloudflare آماده است."
+                                            run.buildSucceeded -> "ساخت موفق شد؛ خروجی dist آماده دریافت است."
+                                            else -> "ساخت وب موفق نبود یا هنوز خروجی آماده نشده؛ گزارش را بررسی کن."
+                                        }
+                                        if (run.deploymentConclusion == "failure") {
+                                            webBuildStatus += " انتشار Cloudflare ناموفق بود؛ جزئیات در گزارش GitHub است."
                                         }
                                     }
                                 }.onFailure { webBuildStatus = it.message ?: "خواندن وضعیت Build وب ناموفق بود." }
@@ -605,12 +621,48 @@ private fun StudioApp() {
                     }, enabled = !webBuildBusy && webBuildBranch.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                         Text("بررسی وضعیت Build وب")
                     }
+                    if (webBuildArtifactId != null && webBuildProjectName == selectedProject) {
+                        OutlinedButton(onClick = {
+                            webBuildBusy = true
+                            webBuildStatus = "در حال دریافت امن خروجی سایت..."
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        GitHubWebBuild.downloadArtifact(
+                                            githubToken, webBuildArtifactId!!, File(workspace, webBuildProjectName)
+                                        )
+                                    }
+                                }.onSuccess {
+                                    runCatching {
+                                        selectedProject = webBuildProjectName
+                                        refreshFiles()
+                                        loadProjectPreview()
+                                        page = "پیش‌نمایش"
+                                    }.onSuccess {
+                                        webBuildStatus = "خروجی دریافت شد؛ پیش‌نمایش محلی آماده است."
+                                    }.onFailure {
+                                        webBuildStatus = "خروجی دریافت شد اما پیش‌نمایش باز نشد: " + (it.message ?: "خطا")
+                                    }
+                                }.onFailure {
+                                    webBuildStatus = "دریافت خروجی ناموفق بود: " + (it.message ?: "خطا")
+                                }
+                                webBuildBusy = false
+                            }
+                        }, enabled = !webBuildBusy, modifier = Modifier.fillMaxWidth()) {
+                            Text("دریافت خروجی و پیش‌نمایش داخل برنامه")
+                        }
+                    }
+                    if (cloudflarePreviewUrl.isNotBlank()) {
+                        OutlinedButton(onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(cloudflarePreviewUrl)))
+                        }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن پیش‌نمایش آنلاین Cloudflare") }
+                    }
                     if (webBuildRunUrl.isNotBlank()) {
                         OutlinedButton(onClick = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webBuildRunUrl)))
-                        }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش و دریافت فایل سایت") }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش ساخت و انتشار") }
                     }
-                    Text("برای React/Vite، وابستگی‌ها نصب و npm run build اجرا می‌شود؛ برای HTML/CSS/JS، فایل‌های سایت در dist آماده انتشار می‌شوند. خروجی ZIP وب از Artifact اجرای GitHub قابل دریافت است.", color = Muted, fontSize = 11.sp)
+                    Text("ساخت وب در GitHub انجام می‌شود. پس از موفقیت می‌توانی خروجی واقعی را دریافت و در پیش‌نمایش داخلی باز کنی. برای انتشار آنلاین، تنظیم امن Cloudflare در Secrets و Variables مخزن لازم است.", color = Muted, fontSize = 11.sp)
                 }
                 "هوش مصنوعی" -> Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("دستیار هوشمند", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)

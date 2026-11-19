@@ -1,4 +1,4 @@
-name: Build User Web Project
+name: Build and Preview User Web Project
 on:
   workflow_dispatch:
     inputs:
@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       project_name:
-        description: Display name for the project
+        description: Safe project slug and Cloudflare Pages project name
         required: true
         type: string
 permissions:
@@ -19,7 +19,7 @@ jobs:
       PROJECT_PATH: ${{ inputs.project_path }}
       PROJECT_NAME: ${{ inputs.project_name }}
     steps:
-      - name: Validate project path
+      - name: Validate inputs
         shell: bash
         run: |
           case "$PROJECT_PATH" in
@@ -27,7 +27,11 @@ jobs:
             *) echo "Invalid project path"; exit 1 ;;
           esac
           if [[ "$PROJECT_PATH" == *".."* || "$PROJECT_PATH" == *$'\n'* ]]; then
-            echo "Unsafe path rejected"
+            echo "Unsafe project path rejected"
+            exit 1
+          fi
+          if [[ ! "$PROJECT_NAME" =~ ^[a-z0-9]([a-z0-9-]{0,34}[a-z0-9])?$ ]]; then
+            echo "Project name must be a 1-36 character lowercase slug"
             exit 1
           fi
       - uses: actions/checkout@v4
@@ -36,7 +40,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.14.0'
-      - name: Build React or other Node web application
+      - name: Build React, Vite, or another Node web app
         if: ${{ hashFiles(format('{0}/package.json', inputs.project_path)) != '' }}
         shell: bash
         run: |
@@ -47,12 +51,12 @@ jobs:
             npm install --no-audit --no-fund
           fi
           npm run build
-          test -f dist/index.html
+          test -s dist/index.html
       - name: Prepare static HTML website
         if: ${{ hashFiles(format('{0}/package.json', inputs.project_path)) == '' }}
         shell: bash
         run: |
-          test -f "$PROJECT_PATH/index.html"
+          test -s "$PROJECT_PATH/index.html"
           mkdir -p "$PROJECT_PATH/dist"
           rsync -a --delete \
             --exclude '.git' \
@@ -61,11 +65,75 @@ jobs:
             --exclude 'build' \
             --exclude 'dist' \
             "$PROJECT_PATH/" "$PROJECT_PATH/dist/"
-          test -f "$PROJECT_PATH/dist/index.html"
-      - name: Upload deployable website
+          test -s "$PROJECT_PATH/dist/index.html"
+      - name: Upload deployable website artifact
         uses: actions/upload-artifact@v4
         with:
           name: web-dist-${{ inputs.project_name }}
           path: ${{ inputs.project_path }}/dist/
           if-no-files-found: error
           retention-days: 14
+      - name: Write build summary
+        shell: bash
+        run: |
+          {
+            echo "## Web build completed"
+            echo "- Project: `$PROJECT_NAME`"
+            echo "- Source: `$PROJECT_PATH`"
+            echo "- Output: `dist/`"
+            echo "- Artifact: `web-dist-$PROJECT_NAME`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Explain optional Cloudflare setup
+        if: ${{ vars.CLOUDFLARE_PAGES_DEPLOY != 'true' }}
+        run: |
+          {
+            echo "## Online preview not enabled"
+            echo "The build artifact is ready. To publish an isolated Cloudflare Pages preview, follow docs/CLOUDFLARE_PAGES_PREVIEW.md and enable the repository variable."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-preview:
+    needs: build
+    if: ${{ vars.CLOUDFLARE_PAGES_DEPLOY == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROJECT_NAME: ${{ inputs.project_name }}
+      PREVIEW_BRANCH: ${{ github.ref_name }}
+    steps:
+      - name: Verify Cloudflare credentials
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID repository secret"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN repository secret"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist-${{ inputs.project_name }}
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+      - name: Ensure Pages project exists
+        shell: bash
+        run: |
+          npx --yes wrangler@4 pages project list --json > /tmp/pages-projects.json
+          if ! node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('/tmp/pages-projects.json','utf8'));process.exit(Array.isArray(p)&&p.some(x=>x.name===process.env.PROJECT_NAME)?0:1)"; then
+            npx --yes wrangler@4 pages project create "$PROJECT_NAME" --production-branch main
+          fi
+      - name: Deploy isolated branch preview to Cloudflare Pages
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --yes wrangler@4 pages deploy dist --project-name "$PROJECT_NAME" --branch "$PREVIEW_BRANCH" 2>&1 | tee /tmp/pages-deploy.log
+          PREVIEW_ALIAS="$(echo "$PREVIEW_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')"
+          PREVIEW_URL="https://$PREVIEW_ALIAS.$PROJECT_NAME.pages.dev"
+          {
+            echo "## Cloudflare Pages preview deployed"
+            echo "- Preview URL: [$PREVIEW_URL]($PREVIEW_URL)"
+            echo "- Project: `$PROJECT_NAME`"
+            echo "- Branch: `$PREVIEW_BRANCH`"
+            echo "- This is a preview deployment; it does not replace the production branch."
+          } >> "$GITHUB_STEP_SUMMARY"
