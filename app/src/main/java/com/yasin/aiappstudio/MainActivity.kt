@@ -35,6 +35,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.ByteArrayInputStream
+import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -310,22 +311,43 @@ private fun StudioApp() {
                     if (previewError.isNotBlank()) Text(previewError, color = Color(0xFFFF8888), fontSize = 12.sp)
                     key(selectedProject, previewHtml, previewUsesReact) {
                         AndroidView(modifier = Modifier.fillMaxSize().weight(1f), factory = { ctx ->
+                            val projectRoot = if (previewUsesReact) File(workspace, selectedProject).canonicalFile
+                                else StaticPreviewRenderer.previewRoot(workspace, selectedProject)
                             WebView(ctx).apply {
                                 settings.javaScriptEnabled = true
                                 settings.allowFileAccess = false
                                 settings.allowContentAccess = false
-                                settings.blockNetworkLoads = !previewUsesReact
+                                // All requests are intercepted: project files are served from this root,
+                                // and React may additionally fetch only its three pinned CDN scripts.
+                                settings.blockNetworkLoads = false
                                 settings.domStorageEnabled = false
                                 settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                                 webViewClient = object : WebViewClient() {
                                     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                                        if (!previewUsesReact) return super.shouldInterceptRequest(view, request)
-                                        val requested = request?.url?.toString().orEmpty()
-                                        return if (ReactPreviewRenderer.isAllowedAsset(requested)) {
-                                            super.shouldInterceptRequest(view, request)
-                                        } else {
-                                            WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                        val uri = request?.url ?: return WebResourceResponse(
+                                            "text/plain", "UTF-8", 403, "Blocked", emptyMap(),
+                                            ByteArrayInputStream(ByteArray(0))
+                                        )
+                                        if (uri.host == "studio-preview.invalid") {
+                                            if (request.method != "GET") return WebResourceResponse(
+                                                "text/plain", "UTF-8", 403, "Blocked", emptyMap(),
+                                                ByteArrayInputStream(ByteArray(0))
+                                            )
+                                            val asset = PreviewAssetResolver.resolveFile(projectRoot, uri.path ?: "/")
+                                                ?: return WebResourceResponse(
+                                                    "text/plain", "UTF-8", 404, "Not Found", emptyMap(),
+                                                    ByteArrayInputStream(ByteArray(0))
+                                                )
+                                            val mime = PreviewAssetResolver.mimeType(asset)
+                                            return WebResourceResponse(mime, PreviewAssetResolver.charsetFor(mime), FileInputStream(asset))
                                         }
+                                        if (previewUsesReact && ReactPreviewRenderer.isAllowedAsset(uri.toString())) {
+                                            return super.shouldInterceptRequest(view, request)
+                                        }
+                                        return WebResourceResponse(
+                                            "text/plain", "UTF-8", 403, "Blocked", emptyMap(),
+                                            ByteArrayInputStream(ByteArray(0))
+                                        )
                                     }
                                     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = true
                                 }
