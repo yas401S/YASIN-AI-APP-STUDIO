@@ -846,8 +846,6 @@ private fun StudioApp() {
                 require(selectedProject.isNotBlank()) { "ابتدا یک پروژه را باز کن." }
                 val manager = WorkspaceManager(workspace)
                 pendingAiPatches.forEach { patch ->
-                    val existing = runCatching { manager.readFile(selectedProject, patch.path) }.getOrNull()
-                    if (existing == null) manager.createEntry(selectedProject, patch.path, false)
                     manager.saveFile(selectedProject, patch.path, patch.content)
                 }
                 refreshFiles()
