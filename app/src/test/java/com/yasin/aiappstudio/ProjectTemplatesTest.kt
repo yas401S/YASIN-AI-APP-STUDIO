@@ -13,7 +13,7 @@ class ProjectTemplatesTest {
         assertTrue(main.value.contains("ComponentActivity"))
         assertTrue(main.value.contains("setContent"))
         assertTrue(main.value.contains("GeneratedAppTheme"))
-        assertTrue(files.values.any { it.contains("com.yasin.generated.my_app") })
+        assertTrue(files.values.any { it.contains("com.yasin.generated.app_my_app") })
         assertTrue(files.containsKey("app/src/test/java/com/yasin/generated/my_app/ExampleUnitTest.kt"))
     }
 
@@ -42,7 +42,7 @@ class ProjectTemplatesTest {
 
     @Test fun generatedNamesAreSafeForAndroidPackageAndWebSlug() {
         val android = ProjectTemplates.files("android-kotlin", "پروژه جدید!")
-        assertTrue(android.keys.any { it.contains("com/yasin/generated/new_project") && it.endsWith("MainActivity.kt") })
+        assertTrue(android.keys.any { it.contains("com/yasin/generated/app_new_project") && it.endsWith("MainActivity.kt") })
         val web = ProjectTemplates.files("web-react", "پروژه جدید!")
         assertTrue(web.getValue("package.json").contains("\"name\": \"new-project\""))
     }
