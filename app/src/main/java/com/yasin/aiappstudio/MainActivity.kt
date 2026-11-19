@@ -1080,8 +1080,10 @@ private suspend fun analyzeStudioImage(
         val response = JSONObject(raw)
         val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
         val cleaned = message.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val parsed = JSONObject(cleaned)
-        parsed.optString("analysis").takeIf { it.isNotBlank() } ?: error("مدل بینایی تحلیل قابل استفاده‌ای برنگرداند.")
+        val structuredAnalysis = runCatching { JSONObject(cleaned).optString("analysis") }.getOrNull()
+        structuredAnalysis?.takeIf { it.isNotBlank() }
+            ?: cleaned.takeIf { it.isNotBlank() }
+            ?: error("مدل بینایی تحلیل قابل استفاده‌ای برنگرداند.")
     } finally {
         conn?.disconnect()
     }
@@ -1145,7 +1147,8 @@ $projectContext"""
         val response = JSONObject(raw)
         val content = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
         val jsonText = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val parsed = JSONObject(jsonText)
+        val parsed = runCatching { JSONObject(jsonText) }.getOrNull()
+            ?: return@withContext StudioAiResult(jsonText.take(12000), usage = AiUsageParser.parse(raw))
         val patches = mutableListOf<StudioFilePatch>()
         val files = parsed.optJSONArray("files") ?: JSONArray()
         require(files.length() <= 40) { "تعداد فایل‌های پیشنهادی بیش از حد مجاز است." }
