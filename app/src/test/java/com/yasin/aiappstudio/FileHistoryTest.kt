@@ -11,6 +11,7 @@ class FileHistoryTest {
         try {
             val manager = WorkspaceManager(File(root, "workspace"))
             manager.createProject("demo")
+            manager.saveFile("demo", "src/Main.kt", "version zero")
             manager.saveFile("demo", "src/Main.kt", "version one")
             Thread.sleep(2)
             manager.saveFile("demo", "src/Main.kt", "version two")
@@ -33,7 +34,9 @@ class FileHistoryTest {
             val workspace = File(root, "workspace")
             val manager = WorkspaceManager(workspace)
             manager.createProject("demo")
+            manager.saveFile("demo", "a_b.txt", "underscore zero")
             manager.saveFile("demo", "a_b.txt", "underscore")
+            manager.saveFile("demo", "a/b.txt", "nested zero")
             manager.saveFile("demo", "a/b.txt", "nested")
             assertEquals(1, FileHistory.list(workspace, "demo", "a_b.txt").size)
             assertEquals(1, FileHistory.list(workspace, "demo", "a/b.txt").size)
