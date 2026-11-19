@@ -54,4 +54,19 @@ class ProjectTemplatesTest {
         val web = ProjectTemplates.files("web-react", "پروژه جدید!")
         assertTrue(web.getValue("package.json").contains("\"name\": \"new-project\""))
     }
+
+    @Test fun godotTemplateCreatesPlayableCoinCollectorGame() {
+        val files = ProjectTemplates.files("godot", "Coin Quest")
+        assertTrue(files.containsKey("project.godot"))
+        assertTrue(files.containsKey("Main.tscn"))
+        assertTrue(files.containsKey("Main.gd"))
+        assertTrue(files.containsKey("Player.tscn"))
+        assertTrue(files.containsKey("Player.gd"))
+        assertTrue(files.containsKey("Coin.tscn"))
+        assertTrue(files.containsKey("Coin.gd"))
+        assertTrue(files.getValue("Main.gd").contains("COIN_COUNT = 12"))
+        assertTrue(files.getValue("Player.gd").contains("move_and_slide()"))
+        assertTrue(files.getValue("Coin.gd").contains("collected.emit()"))
+        assertTrue(files.getValue("README.md").contains("Godot 4"))
+    }
 }
