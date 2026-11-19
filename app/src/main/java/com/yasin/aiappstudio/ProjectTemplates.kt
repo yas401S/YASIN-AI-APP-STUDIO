@@ -357,7 +357,7 @@ private fun StarterScreen() {
     ) {
         Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
         Text("پروژه اندروید شما آماده توسعه است.")
-        Button(onClick = { taps++ }) { Text("تعداد لمس: ${' }
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
     }
 }
 """,
@@ -401,72 +401,7 @@ class ExampleUnitTest {
     }
 }
 """
-            )
-            "godot" -> mapOf(
-                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
-                "project.godot" to """config_version=5
-[application]
-config/name="$safeTitle"
-run/main_scene="res://Main.tscn"
-[rendering]
-renderer/rendering_method="gl_compatibility"
-""",
-                "Main.tscn" to """[gd_scene load_steps=2 format=3]
-[ext_resource type="Script" path="res://Main.gd" id="1"]
-[node name="Main" type="Node2D"]
-script = ExtResource("1")
-""",
-                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
-            )
-            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
-        }
-    }
-}
- }taps") }
-    }
-}
-""",
-                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
-
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF315EE8),
-    secondary = Color(0xFF9A6B00),
-    background = Color(0xFFF7F8FC),
-    surface = Color.White
-)
-
-@Composable
-fun GeneratedAppTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = LightColors, content = content)
-}
-""",
-                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
-                "app/src/main/res/values/styles.xml" to """<resources>
-    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#315EE8</item>
-        <item name="android:windowLightStatusBar">true</item>
-    </style>
-</resources>
-""",
-                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
-
-import org.junit.Assert.assertEquals
-import org.junit.Test
-
-class ExampleUnitTest {
-    @Test fun arithmeticWorks() {
-        assertEquals(4, 2 + 2)
-    }
-}
-"""
-            )
+            ),
             "godot" -> mapOf(
                 "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
                 "project.godot" to """config_version=5
