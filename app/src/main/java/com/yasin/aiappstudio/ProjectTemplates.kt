@@ -50,7 +50,6 @@ object ProjectTemplates {
 <meta property="og:description" content="وب‌سایت حرفه‌ای و واکنش‌گرا"><meta property="og:image" content="assets/og-cover.svg">
 <title>$safeTitle</title><link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest"><link rel="stylesheet" href="assets/css/styles.css">
-<script src="assets/js/app.js" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">رفتن به محتوای اصلی</a>
@@ -96,6 +95,7 @@ object ProjectTemplates {
 </div></section>
 </main>
 <footer class="site-footer"><div class="container footer-inner"><span>© <span id="current-year"></span> $safeTitle</span><a href="#home">بازگشت به بالا ↑</a></div></footer>
+<script src="assets/js/app.js"></script>
 </body></html>
 """,
                 "assets/css/styles.css" to """:root{color-scheme:light;--bg:#fff;--surface:#f3f6fb;--text:#17243a;--muted:#61718a;--primary:#315ee8;--line:#dfe6f0;--card:#fff;--shadow:0 18px 55px #17243a12}
