@@ -1,4 +1,5 @@
-const MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+const VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+const CODE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
@@ -93,7 +94,7 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "YASIN AI Studio", model: MODEL });
+      return json({ ok: true, service: "YASIN AI Studio", models: { vision: VISION_MODEL, textAndCode: CODE_MODEL } });
     }
 
     if (request.method !== "POST" || url.pathname !== "/v1/chat/completions") {
@@ -120,10 +121,15 @@ export default {
       }
 
       const maxTokens = Math.max(128, Math.min(Number(input.max_tokens || 4096), 4096));
+      // The 11B vision model handles image requests. The 70B text model supports
+      // Cloudflare JSON Mode and is substantially more reliable for file generation.
+      const model = image ? VISION_MODEL : CODE_MODEL;
       const aiInput = { messages, max_tokens: maxTokens, temperature: 0.15 };
-      // Keep image_url inside message content. Cloudflare's current multimodal
-      // chat format accepts the data URI there and preserves text/image pairing.
-      const result = await env.AI.run(MODEL, aiInput);
+      if (!image && input.response_format?.type === "json_object") {
+        aiInput.response_format = { type: "json_object" };
+      }
+      // Keep image_url inside message content for the vision model.
+      const result = await env.AI.run(model, aiInput);
       const content = typeof result?.response === "string"
         ? result.response
         : JSON.stringify(result?.response ?? result);
@@ -133,7 +139,7 @@ export default {
         id: "yasin-ai-" + crypto.randomUUID(),
         object: "chat.completion",
         created: Math.floor(Date.now() / 1000),
-        model: MODEL,
+        model,
         choices: [{
           index: 0,
           message: { role: "assistant", content },
