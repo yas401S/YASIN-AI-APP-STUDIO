@@ -26,7 +26,8 @@ class WorkspaceManagerTest {
     @Test fun createsRealWebTemplateAndSearchesFiles() {
         manager.createProject("نمونه وب", "web-static")
         assertTrue(File(temp, "workspace/نمونه وب/index.html").isFile)
-        assertTrue(manager.listEntries("نمونه وب").any { it.path == "style.css" })
+        assertTrue(manager.listEntries("نمونه وب").any { it.path == "assets/css/styles.css" })
+        assertTrue(manager.listEntries("نمونه وب").any { it.path == "assets/js/app.js" })
         manager.saveFile("نمونه وب", "app.js", "const message = 'hello';")
         assertTrue(manager.search("نمونه وب", "hello").any { it.first.startsWith("app.js:") && it.second.contains("hello", ignoreCase = true) })
     }
