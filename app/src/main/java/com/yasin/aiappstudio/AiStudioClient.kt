@@ -17,7 +17,7 @@ internal data class StudioChatMessage(val role: String, val content: String)
 internal data class StudioFilePatch(val path: String, val content: String)
 internal data class StudioAiResult(val reply: String, val summary: String = "", val patches: List<StudioFilePatch> = emptyList(), val usage: AiUsage? = null)
 
-private fun prepareStudioImage(context: Context, uri: Uri): String {
+internal fun prepareStudioImage(context: Context, uri: Uri): String {
     val resolver = context.contentResolver
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
@@ -43,7 +43,7 @@ private fun prepareStudioImage(context: Context, uri: Uri): String {
     }
 }
 
-private suspend fun analyzeStudioImage(
+internal suspend fun analyzeStudioImage(
     endpoint: String, model: String, key: String, imageDataUrl: String
 ): String = withContext(Dispatchers.IO) {
     require(endpoint.isNotBlank() && model.isNotBlank()) { "نشانی اتصال مدل بینایی تنظیم نشده است." }
@@ -86,7 +86,7 @@ private suspend fun analyzeStudioImage(
     }
 }
 
-private suspend fun askStudioModel(
+internal suspend fun askStudioModel(
     endpoint: String, model: String, key: String, prompt: String,
     history: List<StudioChatMessage>, projectContext: String, imageDataUrl: String?
 ): StudioAiResult = withContext(Dispatchers.IO) {
