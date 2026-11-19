@@ -1172,6 +1172,7 @@ For ordinary conversation/questions, return {"reply":"...","summary":"","files":
 For straightforward build requests (calculator, notes, todo list, timer, login screen, simple game or landing page), choose sensible defaults and generate a complete working first version immediately; do not ask follow-up questions unless a critical requirement is missing.
 Never claim code was written unless you provide it in files. Provide complete file contents, not diffs. Use only paths relative to the selected project root. Never emit absolute paths, .. segments, hidden paths, secrets, or executable shell scripts. Do not overwrite build outputs, .git, .history, gradle caches, local.properties, keystores, signing configs or credential files. Keep existing Gradle project configuration intact and only create or modify app source, resources, tests and documentation as needed. If context is insufficient, make reasonable defaults for a simple starter instead of returning no files.
 For image requests, infer layout, colors, typography, controls and navigation from the image; create actual app UI source files consistent with the existing project's language and architecture. Preserve existing project structure and avoid unnecessary rewrites.
+For the supplied Android Kotlin + Jetpack Compose template, preserve the existing package declaration and edit the existing app/src/main/java/.../MainActivity.kt path shown in the project context. Use androidx.compose.material3 APIs (not androidx.compose.material), match the dependencies already present in app/build.gradle.kts, and return complete compilable Kotlin files. Do not invent XML layouts for a Compose project.
 Current selected project files:
 $projectContext"""
         messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
@@ -1182,8 +1183,26 @@ $projectContext"""
             .put(JSONObject().put("type", "text").put("text", prompt.ifBlank { "این تصویر را به رابط کاربری واقعی در پروژه تبدیل کن." }))
             .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageDataUrl)))
         messages.put(JSONObject().put("role", "user").put("content", userContent))
+        val fileSchema = JSONObject()
+            .put("type", "object")
+            .put("properties", JSONObject()
+                .put("path", JSONObject().put("type", "string"))
+                .put("content", JSONObject().put("type", "string")))
+            .put("required", JSONArray().put("path").put("content"))
+            .put("additionalProperties", false)
+        val outputSchema = JSONObject()
+            .put("type", "object")
+            .put("properties", JSONObject()
+                .put("reply", JSONObject().put("type", "string"))
+                .put("summary", JSONObject().put("type", "string"))
+                .put("files", JSONObject().put("type", "array").put("items", fileSchema)))
+            .put("required", JSONArray().put("reply").put("summary").put("files"))
+            .put("additionalProperties", false)
+        val responseFormat = JSONObject()
+            .put("type", "json_schema")
+            .put("json_schema", outputSchema)
         val payload = JSONObject().put("model", model).put("messages", messages)
-            .put("response_format", JSONObject().put("type", "json_object"))
+            .put("response_format", responseFormat)
         conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
         val status = conn.responseCode
         val stream = if (status in 200..299) conn.inputStream else conn.errorStream
