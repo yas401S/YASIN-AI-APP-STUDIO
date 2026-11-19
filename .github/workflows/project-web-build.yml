@@ -36,7 +36,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.14.0'
-          cache: ''
       - name: Build React or other Node web application
         if: ${{ hashFiles(format('{0}/package.json', inputs.project_path)) != '' }}
         shell: bash
