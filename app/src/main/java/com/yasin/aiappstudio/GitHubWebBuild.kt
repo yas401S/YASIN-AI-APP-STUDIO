@@ -76,7 +76,8 @@ object GitHubWebBuild {
         require(File(root, "index.html").isFile || File(root, "package.json").isFile) {
             "پروژه وب معتبر نیست؛ index.html یا package.json پیدا نشد."
         }
-        val slug = projectName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(35).ifBlank { "web-app" }
+        val readableSlug = projectName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(26).ifBlank { "web-app" }
+        val slug = "$readableSlug-${Integer.toHexString(projectName.hashCode()).takeLast(8)}"
         val branch = "studio-web-" + System.currentTimeMillis().toString()
         val ref = JSONObject(request(token, "GET", "/repos/$OWNER/$REPO/git/ref/heads/main"))
         val baseSha = ref.getJSONObject("object").getString("sha")
