@@ -1,6 +1,9 @@
 package com.yasin.aiappstudio
 
 import android.os.Bundle
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Base64
 import android.content.Intent
 import android.net.Uri
@@ -762,11 +765,7 @@ private fun StudioApp() {
                                 }.getOrDefault("")
                                 val result = runCatching {
                                     val imageData = imageUri?.let { uri ->
-                                        val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
-                                        require(mime.startsWith("image/")) { "فایل انتخابی تصویر نیست." }
-                                        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("خواندن تصویر ناموفق بود.")
-                                        require(bytes.size <= 8 * 1024 * 1024) { "حجم تصویر باید کمتر از ۸ مگابایت باشد." }
-                                        "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+                                        prepareStudioImage(context, uri)
                                     }
                                     if (imageData != null) {
                                         visionStage = "مرحله ۱ از ۲: در حال تحلیل تصویر و استخراج اجزای بصری..."
@@ -1046,6 +1045,32 @@ private fun StudioApp() {
         dismissButton = { TextButton(onClick = { showRename = false }) { Text("لغو") } })
 }
 
+private fun prepareStudioImage(context: Context, uri: Uri): String {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        ?: error("خواندن تصویر ناموفق بود.")
+    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "فایل تصویر معتبر نیست." }
+
+    var sample = 1
+    while (maxOf(bounds.outWidth / sample, bounds.outHeight / sample) > 1600) sample *= 2
+    val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.RGB_565 }
+    val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+        ?: error("رمزگشایی تصویر ناموفق بود.")
+    val output = java.io.ByteArrayOutputStream()
+    try {
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 82, output)
+        val bytes = output.toByteArray()
+        require(bytes.isNotEmpty() && bytes.size <= 5 * 1024 * 1024) {
+            "آماده‌سازی تصویر ناموفق بود؛ لطفاً تصویر دیگری انتخاب کن."
+        }
+        return "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+    } finally {
+        bitmap.recycle()
+        output.close()
+    }
+}
+
 private suspend fun analyzeStudioImage(
     endpoint: String, model: String, key: String, imageDataUrl: String
 ): String = withContext(Dispatchers.IO) {
@@ -1056,7 +1081,7 @@ private suspend fun analyzeStudioImage(
         conn = (URL(safeEndpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 20000
-            readTimeout = 90000
+            readTimeout = 120000
             doOutput = true
             instanceFollowRedirects = false
             setRequestProperty("Content-Type", "application/json")
