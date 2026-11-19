@@ -19,8 +19,10 @@ object StaticPreviewRenderer {
         require(root.isDirectory && root.path.startsWith(base.path + File.separator)) {
             "پوشه پروژه معتبر نیست."
         }
-        val htmlFile = safeLocalFile(root, "index.html")
-        require(htmlFile.isFile) { "فایل index.html در پروژه پیدا نشد." }
+        val distRoot = File(root, "dist").canonicalFile
+        val siteRoot = if (distRoot.isDirectory && File(distRoot, "index.html").isFile) distRoot else root
+        val htmlFile = safeLocalFile(siteRoot, "index.html")
+        require(htmlFile.isFile) { "فایل index.html یا خروجی dist/index.html در پروژه پیدا نشد." }
         require(htmlFile.length() <= MAX_HTML_BYTES) { "حجم index.html برای پیش‌نمایش بیش از حد مجاز است." }
 
         var totalAssets = 0L
@@ -35,16 +37,16 @@ object StaticPreviewRenderer {
         val cssPattern = Regex("""<link\b([^>]*?)href\s*=\s*["']([^"']+\.css(?:\?[^"']*)?)["']([^>]*)>""", RegexOption.IGNORE_CASE)
         html = cssPattern.replace(html) { match ->
             val path = match.groupValues[2]
-            val asset = safeLocalFile(root, path)
+            val asset = safeLocalFile(siteRoot, path)
             require(asset.isFile) { "فایل CSS محلی پیدا نشد: $path" }
             account(asset)
-            "<style>\n${embedCss(asset.readText(), root, asset.parentFile)}\n</style>"
+            "<style>\n${embedCss(asset.readText(), siteRoot, asset.parentFile)}\n</style>"
         }
 
         val jsPattern = Regex("""<script\b([^>]*?)src\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']([^>]*)>\s*</script>""", RegexOption.IGNORE_CASE)
         html = jsPattern.replace(html) { match ->
             val path = match.groupValues[2]
-            val asset = safeLocalFile(root, path)
+            val asset = safeLocalFile(siteRoot, path)
             require(asset.isFile) { "فایل JavaScript محلی پیدا نشد: $path" }
             account(asset)
             "<script>\n${asset.readText().replace("</script", "<\\/script", ignoreCase = true)}\n</script>"
@@ -54,7 +56,7 @@ object StaticPreviewRenderer {
         html = mediaPattern.replace(html) { match ->
             val raw = match.groupValues[2]
             if (raw.startsWith("data:", true) || raw.startsWith("#")) return@replace match.value
-            val asset = safeLocalFile(root, raw)
+            val asset = safeLocalFile(siteRoot, raw)
             require(asset.isFile) { "فایل رسانه محلی پیدا نشد: $raw" }
             account(asset)
             match.groupValues[1] + dataUri(asset) + match.groupValues[3]
