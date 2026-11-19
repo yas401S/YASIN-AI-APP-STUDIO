@@ -148,6 +148,70 @@ export default {
           throw firstError;
         }
       }
+
+      // A coding agent should review generated source before presenting it.
+      // This second pass is limited to actual file-generation responses; normal
+      // chat stays single-pass. If review fails, preserve the valid first draft.
+      if (!image && aiInput.response_format && result?.response) {
+        const firstDraft = typeof result.response === "string"
+          ? result.response
+          : JSON.stringify(result.response);
+        let draftObject = null;
+        try { draftObject = JSON.parse(firstDraft); } catch {}
+        if (Array.isArray(draftObject?.files) && draftObject.files.length > 0) {
+          try {
+            const lastUserMessage = [...messages].reverse().find((item) => item.role === "user")?.content || "";
+            const sourceContext = messages.find((item) => item.role === "system")?.content || "";
+            const reviewMessages = [
+              {
+                role: "system",
+                content: [
+                  "You are an independent principal engineer performing a strict pre-delivery code review.",
+                  "Review the proposed complete project files for compile/runtime errors, missing imports, unresolved symbols, incompatible APIs, incomplete interactions, unsafe behavior, broken paths, and contradictions between files.",
+                  "Return the SAME strict JSON schema requested by the original task: {reply,summary,files}.",
+                  "If the draft has defects, fix them in the complete file contents. Preserve correct work and existing architecture. Do not add TODOs, placeholders, fake data, fake success, or empty handlers.",
+                  "Do not claim tests were run. Do not invent project dependencies or configuration. Keep every file path unchanged unless it is demonstrably wrong."
+                ].join(" ")
+              },
+              {
+                role: "user",
+                content: "Original project context (may be abbreviated):\n" + sourceContext.slice(0, 14000) +
+                  "\n\nUser request:\n" + lastUserMessage.slice(0, 12000) +
+                  "\n\nReview and correct this generated JSON draft. Return complete corrected JSON only:\n" + firstDraft.slice(0, 42000)
+              }
+            ];
+            const reviewInput = {
+              messages: reviewMessages,
+              max_tokens: maxTokens,
+              temperature: 0.08
+            };
+            if (aiInput.response_format) reviewInput.response_format = aiInput.response_format;
+            const reviewed = await env.AI.run(CODE_MODEL, reviewInput);
+            const reviewedText = typeof reviewed?.response === "string"
+              ? reviewed.response
+              : JSON.stringify(reviewed?.response ?? reviewed);
+            const reviewedObject = JSON.parse(reviewedText);
+            if (Array.isArray(reviewedObject?.files) &&
+                reviewedObject.files.length > 0 &&
+                reviewedObject.files.every((file) =>
+                  typeof file?.path === "string" &&
+                  typeof file?.content === "string" &&
+                  file.content.length > 0)) {
+              result = {
+                ...reviewed,
+                usage: {
+                  prompt_tokens: Number(result?.usage?.prompt_tokens || 0) + Number(reviewed?.usage?.prompt_tokens || 0),
+                  completion_tokens: Number(result?.usage?.completion_tokens || 0) + Number(reviewed?.usage?.completion_tokens || 0),
+                  total_tokens: Number(result?.usage?.total_tokens || 0) + Number(reviewed?.usage?.total_tokens || 0)
+                }
+              };
+            }
+          } catch (reviewError) {
+            console.warn("AI code review pass failed; retaining first valid draft:", String(reviewError?.message || reviewError).slice(0, 180));
+          }
+        }
+      }
+
       const content = typeof result?.response === "string"
         ? result.response
         : JSON.stringify(result?.response ?? result);
