@@ -1328,7 +1328,7 @@ private suspend fun askStudioModel(
     var conn: HttpURLConnection? = null
     try {
         conn = (URL(safeEndpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"; connectTimeout = 20000; readTimeout = 90000; doOutput = true
+            requestMethod = "POST"; connectTimeout = 20000; readTimeout = 180000; doOutput = true
             instanceFollowRedirects = false
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json")
