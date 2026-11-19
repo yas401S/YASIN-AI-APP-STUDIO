@@ -367,16 +367,23 @@ private fun StudioApp() {
                                 .onFailure { notice = it.message ?: "خواندن تاریخچه ناموفق بود." }
                         }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.History, null); Text("تاریخچه") }
                         TextButton(onClick = {
+                            val issues = DiagnosticEngine.inspect(selectedPath, editorText)
                             val report = DiagnosticEngine.repairSafeFormatting(editorText)
-                            if (report.fixedCount > 0 && report.content != editorText) {
+                            val safeChanges = report.fixedCount > 0 && report.content != editorText
+                            if (safeChanges) {
                                 runCatching {
                                     WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, report.content)
                                     editorText = report.content
                                     refreshFiles()
-                                    diagnosticMessage = "${report.fixedCount} ایراد قالب‌بندی امن اصلاح شد؛ نسخه قبلی در تاریخچه محفوظ است."
                                 }.onFailure { diagnosticMessage = "اصلاح ذخیره نشد: " + (it.message ?: "خطا") }
+                            }
+                            if (issues.isEmpty()) {
+                                diagnosticMessage = "بررسی محلی: ایراد قابل تشخیصی پیدا نشد."
                             } else {
-                                diagnosticMessage = if (report.issues.isEmpty()) "ایراد قالب‌بندی قابل تشخیصی پیدا نشد." else "موارد شناسایی‌شده نیازمند بررسی دستی هستند."
+                                val fixed = if (safeChanges) "؛ ${report.fixedCount} اصلاح قالب‌بندی ذخیره شد" else ""
+                                val details = issues.take(5).joinToString(" | ") { "خط ${it.line}: ${it.message}" }
+                                val remaining = if (issues.size > 5) " | و ${issues.size - 5} مورد دیگر" else ""
+                                diagnosticMessage = "${issues.size} مورد پیدا شد$fixed. $details$remaining"
                             }
                         }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Build, null); Text("بررسی و اصلاح امن") }
                         Button(onClick = { saveFile() }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Save, null); Text("ذخیره") }
