@@ -24,7 +24,9 @@ class StaticPreviewRendererTest {
         val rendered = StaticPreviewRenderer.render(workspace, "site")
         val root = StaticPreviewRenderer.previewRoot(workspace, "site")
 
-        assertEquals(html, rendered)
+        assertTrue(rendered.contains("Content-Security-Policy"))
+        assertTrue(rendered.contains("connect-src 'none'"))
+        assertTrue(rendered.contains("src=\"/assets/main.js\""))
         assertEquals(project.canonicalFile, root)
         assertNotNull(PreviewAssetResolver.resolveFile(root, "/assets/site.css"))
         assertNotNull(PreviewAssetResolver.resolveFile(root, "/assets/main.js"))
