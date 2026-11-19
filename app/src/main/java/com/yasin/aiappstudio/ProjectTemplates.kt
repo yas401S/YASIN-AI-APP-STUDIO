@@ -512,7 +512,7 @@ const COIN_SCENE = preload("res://Coin.tscn")
 const COIN_COUNT = 12
 var score := 0
 
-@onready var score_label: Label = $CanvasLayer/ScoreLabel
+@onready var score_label: Label = ${dollar}CanvasLayer/ScoreLabel
 
 func _ready() -> void:
     randomize()
