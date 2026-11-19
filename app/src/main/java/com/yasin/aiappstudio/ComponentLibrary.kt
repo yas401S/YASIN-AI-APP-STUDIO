@@ -59,7 +59,29 @@ fun InfoCard(title: String, description: String) {
 fun Counter() {
     var count by remember { mutableIntStateOf(0) }
     Button(onClick = { count++ }) {
-        Text("تعداد: $count")
+        Text("تعداد: ${'
+    }
+}"""),
+        Snippet("godot-player", "حرکت بازیکن Godot", "GDScript", "حرکت دوبعدی با ورودی جهت", """extends CharacterBody2D
+
+@export var speed := 240.0
+
+func _physics_process(_delta: float) -> void:
+    var direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+    velocity = direction * speed
+    move_and_slide()""")
+    )
+
+    fun search(query: String, language: String = "همه"): List<Snippet> {
+        val q = query.trim()
+        return snippets.filter { snippet ->
+            (language == "همه" || snippet.language == language) &&
+                (q.isBlank() || snippet.title.contains(q, true) ||
+                    snippet.description.contains(q, true) || snippet.language.contains(q, true))
+        }
+    }
+}
+}count")
     }
 }"""),
         Snippet("godot-player", "حرکت بازیکن Godot", "GDScript", "حرکت دوبعدی با ورودی جهت", """extends CharacterBody2D
