@@ -1,0 +1,61 @@
+name: Build User Android Project
+on:
+  workflow_dispatch:
+    inputs:
+      project_path:
+        description: Repository folder containing the Android Gradle project
+        required: true
+        type: string
+      project_name:
+        description: Display name for the project
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_PATH: ${{ inputs.project_path }}
+      PROJECT_NAME: ${{ inputs.project_name }}
+    steps:
+      - name: Validate project path
+        shell: bash
+        run: |
+          case "$PROJECT_PATH" in
+            generated-projects/*) ;;
+            *) echo "Invalid project path"; exit 1 ;;
+          esac
+          if [[ "$PROJECT_PATH" == *".."* || "$PROJECT_PATH" == *$'\n'* ]]; then echo "Unsafe path rejected"; exit 1; fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify Gradle project
+        shell: bash
+        run: |
+          test -f "$PROJECT_PATH/settings.gradle" || test -f "$PROJECT_PATH/settings.gradle.kts"
+      - name: Run unit tests
+        working-directory: ${{ inputs.project_path }}
+        run: gradle --no-daemon test
+      - name: Build debug APK
+        working-directory: ${{ inputs.project_path }}
+        run: gradle --no-daemon assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: user-project-${{ inputs.project_name }}-debug-apk
+          path: ${{ inputs.project_path }}/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
