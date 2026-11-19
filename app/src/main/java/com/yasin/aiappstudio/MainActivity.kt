@@ -95,12 +95,14 @@ private fun StudioApp() {
     var renameText by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
     var reply by remember { mutableStateOf("") }
+    var usageSummary by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf(prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions") ?: "") }
     var model by remember { mutableStateOf(prefs.getString("model", "gpt-4o-mini") ?: "") }
     var apiKey by remember { mutableStateOf(prefs.getString("key", "") ?: "") }
     var loading by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    usageSummary = "توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)
     fun projectDir(): File = File(workspace, selectedProject)
     fun refreshFiles() {
         val root = projectDir()
@@ -345,11 +347,24 @@ private fun StudioApp() {
                     OutlinedTextField(prompt, { prompt = it }, modifier = Modifier.fillMaxWidth(), minLines = 4, label = { Text("درخواست شما") })
                     Button(onClick = {
                         loading = true
-                        scope.launch { reply = askModel(endpoint, model, apiKey, prompt); loading = false }
+                        scope.launch {
+                            val result = askModel(endpoint, model, apiKey, prompt)
+                            reply = result.text
+                            result.usage?.let { usage ->
+                                prefs.edit()
+                                    .putLong("usage_prompt", prefs.getLong("usage_prompt", 0L) + usage.promptTokens)
+                                    .putLong("usage_completion", prefs.getLong("usage_completion", 0L) + usage.completionTokens)
+                                    .putLong("usage_total", prefs.getLong("usage_total", 0L) + usage.totalTokens)
+                                    .apply()
+                                usageSummary = "توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)
+                            }
+                            loading = false
+                        }
                     }, enabled = !loading && prompt.isNotBlank() && apiKey.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                         if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Send, null)
                         Spacer(Modifier.width(8.dp)); Text(if (loading) "در حال پاسخ..." else "ارسال درخواست")
                     }
+                    if (usageSummary.isNotBlank()) Text(usageSummary, color = Gold, fontSize = 11.sp)
                     if (reply.isNotBlank()) Card(colors = CardDefaults.cardColors(containerColor = Panel)) { Text(reply, Modifier.padding(14.dp), color = Color.White) }
                     if (apiKey.isBlank()) Text("برای فعال‌سازی، تنظیمات API را کامل کنید.", color = Gold, fontSize = 12.sp)
                 }
@@ -521,8 +536,10 @@ private fun safeChild(root: File, relative: String): File? {
     return if (target.path == base.path || target.path.startsWith(base.path + File.separator)) target else null
 }
 
-private suspend fun askModel(endpoint: String, model: String, key: String, prompt: String): String = withContext(Dispatchers.IO) {
-    if (endpoint.isBlank() || model.isBlank() || key.isBlank()) return@withContext "ابتدا تنظیمات اتصال را کامل کنید."
+private data class AiCallResult(val text: String, val usage: AiUsage? = null)
+
+private suspend fun askModel(endpoint: String, model: String, key: String, prompt: String): AiCallResult = withContext(Dispatchers.IO) {
+    if (endpoint.isBlank() || model.isBlank() || key.isBlank()) return@withContext AiCallResult("ابتدا تنظیمات اتصال را کامل کنید.")
     var conn: HttpURLConnection? = null
     try {
         conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
@@ -537,9 +554,13 @@ private suspend fun askModel(endpoint: String, model: String, key: String, promp
         val status = conn.responseCode
         val stream = if (status in 200..299) conn.inputStream else conn.errorStream
         val raw = stream.bufferedReader().use { it.readText() }
-        if (status !in 200..299) "خطای سرویس ($status): " + raw.take(1200)
-        else JSONObject(raw).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "پاسخ خالی بود.")
+        if (status !in 200..299) AiCallResult("خطای سرویس ($status): " + raw.take(1200))
+        else {
+            val response = JSONObject(raw)
+            val text = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "پاسخ خالی بود.")
+            AiCallResult(text, AiUsageParser.parse(response))
+        }
     } catch (e: Exception) {
-        "خطا در ارتباط: " + (e.message ?: "نامشخص")
+        AiCallResult("خطا در ارتباط: " + (e.message ?: "نامشخص"))
     } finally { conn?.disconnect() }
 }
