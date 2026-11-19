@@ -557,7 +557,7 @@ private suspend fun askModel(endpoint: String, model: String, key: String, promp
         else {
             val response = JSONObject(raw)
             val text = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "پاسخ خالی بود.")
-            AiCallResult(text, AiUsageParser.parse(response))
+            AiCallResult(text, AiUsageParser.parse(raw))
         }
     } catch (e: Exception) {
         AiCallResult("خطا در ارتباط: " + (e.message ?: "نامشخص"))
