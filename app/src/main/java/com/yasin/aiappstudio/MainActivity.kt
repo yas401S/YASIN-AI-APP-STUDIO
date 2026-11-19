@@ -147,6 +147,7 @@ private fun StudioApp() {
     var webBuildRunUrl by remember { mutableStateOf("") }
     var webBuildBusy by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    var visionStage by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val aiImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -702,6 +703,13 @@ private fun StudioApp() {
                         }
                         TextButton(onClick = { chatMessages.clear(); persistAiChat(); pendingAiPatches = emptyList(); pendingAiSummary = ""; reply = "" }) { Text("گفت‌وگوی جدید") }
                     }
+                    if (selectedImageUri != null || visionStage.isNotBlank()) Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("مسیر بینایی تا ساخت برنامه", color = Gold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("۱. دریافت عکس  →  ۲. تحلیل بینایی  →  ۳. استخراج طراحی  →  ۴. تولید فایل‌های پروژه", color = Color.White, fontSize = 10.sp)
+                            if (visionStage.isNotBlank()) Text(visionStage, color = if (visionStage.contains("خطا")) Color(0xFFFF8888) else Gold, fontSize = 11.sp)
+                        }
+                    }
                     if (chatMessages.isEmpty()) Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Text("از اینجا با هوش مصنوعی برنامه‌ات را طراحی کن", color = Gold, fontWeight = FontWeight.Bold)
@@ -760,8 +768,23 @@ private fun StudioApp() {
                                         require(bytes.size <= 8 * 1024 * 1024) { "حجم تصویر باید کمتر از ۸ مگابایت باشد." }
                                         "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
                                     }
-                                    askStudioModel(endpoint, model, apiKey, userPrompt, chatMessages.dropLast(1).takeLast(16), projectContext, imageData)
+                                    if (imageData != null) {
+                                        visionStage = "مرحله ۱ از ۲: در حال تحلیل تصویر و استخراج اجزای بصری..."
+                                        val visualSpec = analyzeStudioImage(endpoint, model, apiKey, imageData)
+                                        visionStage = "مرحله ۲ از ۲: تحلیل آماده شد؛ در حال تبدیل طراحی به فایل‌های واقعی پروژه..."
+                                        askStudioModel(
+                                            endpoint, model, apiKey,
+                                            userPrompt + "\n\nمشخصات استخراج‌شده در مرحله بینایی (مبنای پیاده‌سازی دقیق):\n" + visualSpec +
+                                                "\nبر اساس این مشخصات، رابط کاربری را در معماری و زبان پروژه فعلی پیاده‌سازی کن.",
+                                            chatMessages.dropLast(1).takeLast(16), projectContext, null
+                                        )
+                                    } else {
+                                        visionStage = ""
+                                        askStudioModel(endpoint, model, apiKey, userPrompt, chatMessages.dropLast(1).takeLast(16), projectContext, null)
+                                    }
                                 }.getOrElse { StudioAiResult("خطا: " + (it.message ?: "نامشخص")) }
+                                if (imageUri != null) visionStage = if (result.patches.isNotEmpty()) "تحلیل بینایی و تولید کد تمام شد؛ فایل‌ها برای بازبینی آماده‌اند." else "تحلیل تصویر انجام شد؛ برای تولید فایل، نتیجه و تنظیمات مدل را بررسی کن."
+                                if (result.reply.startsWith("خطا:") || result.reply.startsWith("خطای سرویس")) visionStage = "خطا در فرایند بینایی/تولید: " + result.reply.take(180)
                                 if (result.patches.isNotEmpty()) {
                                     pendingAiPatches = result.patches
                                     pendingAiSummary = result.summary
@@ -1020,6 +1043,47 @@ private fun StudioApp() {
             showRename = false
         }) { Text("تغییر نام") } },
         dismissButton = { TextButton(onClick = { showRename = false }) { Text("لغو") } })
+}
+
+private suspend fun analyzeStudioImage(
+    endpoint: String, model: String, key: String, imageDataUrl: String
+): String = withContext(Dispatchers.IO) {
+    require(endpoint.isNotBlank() && model.isNotBlank() && key.isNotBlank()) { "تنظیمات مدل بینایی کامل نیست." }
+    val safeEndpoint = AiEndpointPolicy.validate(endpoint)
+    var conn: HttpURLConnection? = null
+    try {
+        conn = (URL(safeEndpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 20000
+            readTimeout = 90000
+            doOutput = true
+            instanceFollowRedirects = false
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Authorization", "Bearer $key")
+        }
+        val messages = JSONArray()
+        messages.put(JSONObject().put("role", "system").put("content",
+            "You are a senior computer-vision and UI reverse-engineering specialist. Inspect the supplied image carefully. Return STRICT JSON only: {\"analysis\":\"...\"}. Describe visible screen structure, hierarchy, components, spacing, alignment, colors with approximate hex values, typography, icons, controls, navigation, states, interactions inferable from the image, and responsive behavior. Separate observed facts from uncertain assumptions. Be detailed enough that a coding agent can recreate the interface. Do not return source code."))
+        val content = JSONArray()
+            .put(JSONObject().put("type", "text").put("text", "تحلیل بینایی دقیق این تصویر را انجام بده. تمام اجزای قابل مشاهده و ساختار صفحه را برای بازسازی دقیق استخراج کن."))
+            .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageDataUrl)))
+        messages.put(JSONObject().put("role", "user").put("content", content))
+        val payload = JSONObject().put("model", model).put("messages", messages)
+            .put("response_format", JSONObject().put("type", "json_object"))
+        conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+        val status = conn.responseCode
+        val stream = if (status in 200..299) conn.inputStream else conn.errorStream
+        val raw = stream.bufferedReader().use { it.readText().take(2 * 1024 * 1024) }
+        if (status !in 200..299) error("خطای سرویس بینایی ($status): " + raw.take(700))
+        val response = JSONObject(raw)
+        val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
+        val cleaned = message.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        val parsed = JSONObject(cleaned)
+        parsed.optString("analysis").takeIf { it.isNotBlank() } ?: error("مدل بینایی تحلیل قابل استفاده‌ای برنگرداند.")
+    } finally {
+        conn?.disconnect()
+    }
 }
 
 private fun safeName(value: String): String = value.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(70).ifBlank { "project" }
