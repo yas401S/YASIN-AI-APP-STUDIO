@@ -95,14 +95,13 @@ private fun StudioApp() {
     var renameText by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
     var reply by remember { mutableStateOf("") }
-    var usageSummary by remember { mutableStateOf("") }
+    var usageSummary by remember { mutableStateOf("توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)) }
     var endpoint by remember { mutableStateOf(prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions") ?: "") }
     var model by remember { mutableStateOf(prefs.getString("model", "gpt-4o-mini") ?: "") }
     var apiKey by remember { mutableStateOf(prefs.getString("key", "") ?: "") }
     var loading by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    usageSummary = "توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)
     fun projectDir(): File = File(workspace, selectedProject)
     fun refreshFiles() {
         val root = projectDir()
