@@ -65,11 +65,12 @@ function extractMessages(input) {
             ? part.image_url
             : part.image_url?.url;
           if (typeof imageUrl === "string" && imageUrl.startsWith("data:image/")) {
-            if (imageUrl.length > 11 * 1024 * 1024) {
-              throw new Error("Image too large; maximum 11 MiB");
+            if (imageUrl.length > 7 * 1024 * 1024) {
+              throw new Error("Image too large; maximum 5 MiB");
             }
             image ||= imageUrl;
-            content.push({ type: "image_url", image_url: { url: imageUrl } });
+            // Workers AI Llama Vision expects the image in the top-level image
+            // input field, not as an OpenAI image_url content part.
           }
         }
       }
@@ -125,11 +126,28 @@ export default {
       // Cloudflare JSON Mode and is substantially more reliable for file generation.
       const model = image ? VISION_MODEL : CODE_MODEL;
       const aiInput = { messages, max_tokens: maxTokens, temperature: 0.15 };
-      if (!image && ["json_object", "json_schema"].includes(input.response_format?.type)) {
+      if (image) {
+        // Cloudflare's documented Llama 3.2 Vision interface uses a top-level
+        // image field containing a data URL or image URL.
+        aiInput.image = image;
+      } else if (["json_object", "json_schema"].includes(input.response_format?.type)) {
         aiInput.response_format = input.response_format;
       }
-      // Keep image_url inside message content for the vision model.
-      const result = await env.AI.run(model, aiInput);
+
+      let result;
+      try {
+        result = await env.AI.run(model, aiInput);
+      } catch (firstError) {
+        // Retry without constrained output if a schema edge case is rejected.
+        // The Android client still validates JSON before proposing file writes.
+        if (!image && aiInput.response_format) {
+          const fallbackInput = { ...aiInput };
+          delete fallbackInput.response_format;
+          result = await env.AI.run(model, fallbackInput);
+        } else {
+          throw firstError;
+        }
+      }
       const content = typeof result?.response === "string"
         ? result.response
         : JSON.stringify(result?.response ?? result);
