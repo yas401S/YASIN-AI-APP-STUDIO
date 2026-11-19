@@ -28,7 +28,135 @@ object ComponentLibrary {
 }"""),
         Snippet("js-fetch", "درخواست امن API", "JavaScript", "مدیریت خطا و پاسخ HTTP", """async function loadData(url) {
   const response = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`HTTP ${'`);
+  return response.json();
+}"""),
+        Snippet("js-debounce", "Debounce جست‌وجو", "JavaScript", "کاهش درخواست‌های تکراری", """function debounce(callback, delay = 300) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => callback(...args), delay);
+  };
+}"""),
+        Snippet("react-component", "کامپوننت React", "React", "کامپوننت تابعی ساده", """export function InfoCard({ title, children }) {
+  return (
+    <section className="info-card" aria-label={title}>
+      <h2>{title}</h2>
+      <div>{children}</div>
+    </section>
+  );
+}"""),
+        Snippet("kotlin-compose", "کامپوننت Compose", "Kotlin", "کارت ساده Jetpack Compose", """@Composable
+fun InfoCard(title: String, description: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(description, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}"""),
+        Snippet("kotlin-state", "وضعیت Compose", "Kotlin", "حالت قابل مشاهده و دکمه", """@Composable
+fun Counter() {
+    var count by remember { mutableIntStateOf(0) }
+    Button(onClick = { count++ }) {
+        Text("تعداد: ${'")
+    }
+}"""),
+        Snippet("godot-player", "حرکت بازیکن Godot", "GDScript", "حرکت دوبعدی با ورودی جهت", """extends CharacterBody2D
+
+@export var speed := 240.0
+
+func _physics_process(_delta: float) -> void:
+    var direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+    velocity = direction * speed
+    move_and_slide()""")
+    )
+
+    fun search(query: String, language: String = "همه"): List<Snippet> {
+        val q = query.trim()
+        return snippets.filter { snippet ->
+            (language == "همه" || snippet.language == language) &&
+                (q.isBlank() || snippet.title.contains(q, true) ||
+                    snippet.description.contains(q, true) || snippet.language.contains(q, true))
+        }
+    }
+}
+}{response.status}`);
+  return response.json();
+}"""),
+        Snippet("js-debounce", "Debounce جست‌وجو", "JavaScript", "کاهش درخواست‌های تکراری", """function debounce(callback, delay = 300) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => callback(...args), delay);
+  };
+}"""),
+        Snippet("react-component", "کامپوننت React", "React", "کامپوننت تابعی ساده", """export function InfoCard({ title, children }) {
+  return (
+    <section className="info-card" aria-label={title}>
+      <h2>{title}</h2>
+      <div>{children}</div>
+    </section>
+  );
+}"""),
+        Snippet("kotlin-compose", "کامپوننت Compose", "Kotlin", "کارت ساده Jetpack Compose", """@Composable
+fun InfoCard(title: String, description: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(description, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}"""),
+        Snippet("kotlin-state", "وضعیت Compose", "Kotlin", "حالت قابل مشاهده و دکمه", """@Composable
+fun Counter() {
+    var count by remember { mutableIntStateOf(0) }
+    Button(onClick = { count++ }) {
+        Text("تعداد: $count")
+    }
+}"""),
+        Snippet("godot-player", "حرکت بازیکن Godot", "GDScript", "حرکت دوبعدی با ورودی جهت", """extends CharacterBody2D
+
+@export var speed := 240.0
+
+func _physics_process(_delta: float) -> void:
+    var direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+    velocity = direction * speed
+    move_and_slide()""")
+    )
+
+    fun search(query: String, language: String = "همه"): List<Snippet> {
+        val q = query.trim()
+        return snippets.filter { snippet ->
+            (language == "همه" || snippet.language == language) &&
+                (q.isBlank() || snippet.title.contains(q, true) ||
+                    snippet.description.contains(q, true) || snippet.language.contains(q, true))
+        }
+    }
+}
+}count")
+    }
+}"""),
+        Snippet("godot-player", "حرکت بازیکن Godot", "GDScript", "حرکت دوبعدی با ورودی جهت", """extends CharacterBody2D
+
+@export var speed := 240.0
+
+func _physics_process(_delta: float) -> void:
+    var direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+    velocity = direction * speed
+    move_and_slide()""")
+    )
+
+    fun search(query: String, language: String = "همه"): List<Snippet> {
+        val q = query.trim()
+        return snippets.filter { snippet ->
+            (language == "همه" || snippet.language == language) &&
+                (q.isBlank() || snippet.title.contains(q, true) ||
+                    snippet.description.contains(q, true) || snippet.language.contains(q, true))
+        }
+    }
+}
+}{response.status}`);
   return response.json();
 }"""),
         Snippet("js-debounce", "Debounce جست‌وجو", "JavaScript", "کاهش درخواست‌های تکراری", """function debounce(callback, delay = 300) {
