@@ -1,5 +1,5 @@
 const VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
-const CODE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const CODE_MODEL = "@cf/qwen/qwen2.5-coder-32b-instruct";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
@@ -121,7 +121,7 @@ export default {
         return json({ error: { message: "Image too large" } }, 413);
       }
 
-      const maxTokens = Math.max(128, Math.min(Number(input.max_tokens || 4096), 4096));
+      const maxTokens = Math.max(128, Math.min(Number(input.max_tokens || 8192), 8192));
       // The 11B vision model handles image requests. The 70B text model supports
       // Cloudflare JSON Mode and is substantially more reliable for file generation.
       const model = image ? VISION_MODEL : CODE_MODEL;
