@@ -98,7 +98,7 @@ export default {
     }
 
     const contentLength = Number(request.headers.get("content-length") || 0);
-    if (contentLength > 10 * 1024 * 1024) {
+    if (contentLength > 12 * 1024 * 1024) {
       return json({ error: { message: "Request too large; maximum 10 MiB" } }, 413);
     }
 
@@ -112,7 +112,7 @@ export default {
       const input = await request.json();
       const { messages, image } = extractMessages(input);
 
-      if (image && image.length > 9 * 1024 * 1024) {
+      if (image && image.length > 11 * 1024 * 1024) {
         return json({ error: { message: "Image too large" } }, 413);
       }
 
