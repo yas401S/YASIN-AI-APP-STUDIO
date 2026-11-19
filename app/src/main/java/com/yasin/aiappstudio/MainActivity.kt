@@ -74,6 +74,7 @@ private fun StudioApp() {
     var selectedProject by remember { mutableStateOf("") }
     var selectedPath by remember { mutableStateOf("README.md") }
     var editorText by remember { mutableStateOf("") }
+    var diagnosticMessage by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     var fileItems by remember { mutableStateOf(listOf<WorkspaceFile>()) }
@@ -316,11 +317,26 @@ private fun StudioApp() {
                             runCatching { historyItems = FileHistory.list(workspace, selectedProject, selectedPath); showHistory = true }
                                 .onFailure { notice = it.message ?: "خواندن تاریخچه ناموفق بود." }
                         }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.History, null); Text("تاریخچه") }
+                        TextButton(onClick = {
+                            val report = DiagnosticEngine.repairSafeFormatting(editorText)
+                            if (report.fixedCount > 0 && report.content != editorText) {
+                                runCatching {
+                                    WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, report.content)
+                                    editorText = report.content
+                                    refreshFiles()
+                                    diagnosticMessage = "${report.fixedCount} ایراد قالب‌بندی امن اصلاح شد؛ نسخه قبلی در تاریخچه محفوظ است."
+                                }.onFailure { diagnosticMessage = "اصلاح ذخیره نشد: " + (it.message ?: "خطا") }
+                            } else {
+                                diagnosticMessage = if (report.issues.isEmpty()) "ایراد قالب‌بندی قابل تشخیصی پیدا نشد." else "موارد شناسایی‌شده نیازمند بررسی دستی هستند."
+                            }
+                        }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Build, null); Text("بررسی و اصلاح امن") }
                         Button(onClick = { saveFile() }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Save, null); Text("ذخیره") }
                     }
                     BasicTextField(value = editorText, onValueChange = { editorText = it },
-                        modifier = Modifier.fillMaxSize().background(Color(0xFF050D18), RoundedCornerShape(10.dp)).padding(14.dp),
+                        modifier = Modifier.fillMaxSize().weight(1f).background(Color(0xFF050D18), RoundedCornerShape(10.dp)).padding(14.dp),
                         textStyle = TextStyle(color = Color(0xFFB8D8FF), fontSize = 13.sp, lineHeight = 20.sp))
+                    if (diagnosticMessage.isNotBlank()) Text(diagnosticMessage, color = Gold, fontSize = 11.sp)
+                    Text("اصلاح خودکار فعلی فقط قالب‌بندی بی‌خطر را تغییر می‌دهد؛ تشخیص خطای کامپایل و تعمیر معنایی نیازمند اجرای build و تأیید تغییرات است.", color = Muted, fontSize = 10.sp)
                     if (notice.isNotBlank()) Text(notice, color = Gold, fontSize = 11.sp)
                 }
                 "هوش مصنوعی" -> Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
