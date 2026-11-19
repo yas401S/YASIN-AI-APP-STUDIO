@@ -9,7 +9,7 @@ Every capability must have a working user workflow, visible failure states, auto
 - Android client: Kotlin + Jetpack Compose app foundation.
 - Local workspace: project directories, nested file creation, text read/write, timestamped save snapshots.
 - New workspace service on feature/13-capabilities-foundation: project CRUD, rename/duplicate/delete, safe path validation, bounded ZIP import/export, text search, and starter-template file generation.
-- Starter templates: blank, static web, React/Vite, Android/Kotlin, and Godot 2D. These are project source files, not a claim that their toolchains can already run on the phone.
+- Starter templates: blank, static web, React/Vite, Android/Kotlin, and Godot 2D. Web preview embeds local CSS/JS and common media assets with size/path limits; it can display a built Vite dist/ folder or the restricted React single-file starter. These are not a claim that Android or Godot toolchains run on the phone.
 - Unit tests added for template creation, search, snapshots, project operations, archive round-trip, and ZIP path traversal rejection.
 - Pull requests now run Android unit tests before building the debug APK.
 
@@ -21,7 +21,7 @@ Every capability must have a working user workflow, visible failure states, auto
 | 2 | Websites and web apps | Static and React/Vite templates | Dependency install, live preview, test, production build, export |
 | 3 | Game development | Godot starter project | Isolated Godot import, editor/runtime preview, export profiles; Unity only with licensed tooling |
 | 4 | Code editor and file management | Editor and file actions use workspace service; safe CRUD, search, snapshots, and ZIP archives | Tree navigation, syntax-aware editor, multi-file workflow, diff and restore |
-| 5 | Preview and execution | Not implemented as a real runner | Sandboxed web preview and explicit Android/game runtime support |
+| 5 | Preview and execution | Offline static HTML preview with local CSS/JS and embedded media; Vite production dist preview; restricted single-file React/JSX preview | Automated Vite build inside the app, full multi-module dev server, Android app execution, and Godot runtime/export remain outstanding |
 | 6 | Automatic error repair | AI chat exists; repair loop not implemented | Collect diagnostics, propose diff, approve/revert, rerun checks |
 | 7 | APK/AAB production | Debug APK workflow exists for the Studio app itself | Per-project isolated Gradle jobs, signed release handling, artifact/log delivery |
 | 8 | Version management | Local save snapshots; Git integration pending | Git commits, branches, diffs, tags, restore/revert |
