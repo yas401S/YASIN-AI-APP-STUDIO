@@ -751,6 +751,20 @@ private fun StudioApp() {
                         Button(onClick = {
                             val userPrompt = prompt.trim().ifBlank { "این تصویر را تحلیل کن و پیشنهاد بده چگونه آن را به برنامه واقعی تبدیل کنیم." }
                             val imageUri = selectedImageUri
+                            val buildIntent = imageUri != null || listOf("بساز", "ایجاد کن", "طراحی کن", "تبدیل کن", "برنامه اندروید", "اپلیکیشن", "سایت بساز", "وب‌سایت").any { userPrompt.contains(it, ignoreCase = true) } ||
+                                listOf("create", "build", "generate", "make an app", "make a website").any { userPrompt.contains(it, ignoreCase = true) }
+                            if (selectedProject.isBlank() && buildIntent) {
+                                runCatching {
+                                    val webIntent = listOf("وب‌سایت", "سایت بساز", "website", "web app").any { userPrompt.contains(it, ignoreCase = true) }
+                                    val autoName = (if (webIntent) "AI-Web-" else "AI-Android-") + System.currentTimeMillis().toString()
+                                    WorkspaceManager(workspace).createProject(autoName, if (webIntent) "web-static" else "android-kotlin")
+                                    projects.add(0, autoName)
+                                    persistProjects()
+                                    selectedProject = autoName
+                                    refreshFiles()
+                                    notice = "پروژه پایه واقعی ساخته شد: $autoName؛ فایل‌های هوش مصنوعی پس از بازبینی به همین پروژه اضافه می‌شوند."
+                                }.onFailure { notice = "ساخت پروژه پایه ناموفق بود: " + (it.message ?: "خطا") }
+                            }
                             chatMessages.add(StudioChatMessage("user", userPrompt + if (imageUri != null) "\n[تصویر پیوست شد]" else ""))
                             persistAiChat()
                             prompt = ""; selectedImageUri = null; selectedImageName = ""; loading = true
@@ -1150,7 +1164,8 @@ Talk naturally in Persian. Understand app requirements, ask useful questions, ex
 When the user asks to create or modify project files, return STRICT JSON only with this schema:
 {"reply":"Persian user-facing response","summary":"short change summary","files":[{"path":"relative/path","content":"complete file content"}]}
 For ordinary conversation/questions, return {"reply":"...","summary":"","files":[]}.
-Never claim code was written unless you provide it in files. Provide complete file contents, not diffs. Use only paths relative to the selected project root. Never emit absolute paths, .. segments, hidden paths, secrets, or executable shell scripts. Do not overwrite build outputs, .git, .history, gradle caches, local.properties, keystores, signing configs or credential files. If context is insufficient, ask a question and return files:[].
+For straightforward build requests (calculator, notes, todo list, timer, login screen, simple game or landing page), choose sensible defaults and generate a complete working first version immediately; do not ask follow-up questions unless a critical requirement is missing.
+Never claim code was written unless you provide it in files. Provide complete file contents, not diffs. Use only paths relative to the selected project root. Never emit absolute paths, .. segments, hidden paths, secrets, or executable shell scripts. Do not overwrite build outputs, .git, .history, gradle caches, local.properties, keystores, signing configs or credential files. Keep existing Gradle project configuration intact and only create or modify app source, resources, tests and documentation as needed. If context is insufficient, make reasonable defaults for a simple starter instead of returning no files.
 For image requests, infer layout, colors, typography, controls and navigation from the image; create actual app UI source files consistent with the existing project's language and architecture. Preserve existing project structure and avoid unnecessary rewrites.
 Current selected project files:
 $projectContext"""
