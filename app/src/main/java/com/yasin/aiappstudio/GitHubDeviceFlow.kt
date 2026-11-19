@@ -62,10 +62,15 @@ object GitHubDeviceFlow {
         }
         return try {
             connection.outputStream.use { it.write(encoded.toByteArray(Charsets.UTF_8)) }
-            val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+            val statusCode = connection.responseCode
+            val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (connection.responseCode !in 200..299) {
-                throw IllegalStateException("ارتباط با GitHub ناموفق بود (" + connection.responseCode + ").")
+            if (statusCode !in 200..299) {
+                val safeBody = response.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(700)
+                throw IllegalStateException(
+                    "GitHub HTTP $statusCode در مسیر " + URL(endpoint).path +
+                        (if (safeBody.isNotBlank()) "؛ پاسخ سرور: $safeBody" else "؛ بدنه پاسخ خالی بود.")
+                )
             }
             response
         } finally {

@@ -7,12 +7,15 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.activity.ComponentActivity
+import androidx.core.content.FileProvider
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -66,8 +69,6 @@ class MainActivity : ComponentActivity() {
 }
 
 private data class WorkspaceFile(val file: File, val relative: String, val directory: Boolean)
-private data class StudioChatMessage(val role: String, val content: String)
-private data class StudioFilePatch(val path: String, val content: String)
 
 @Composable
 private fun StudioApp() {
@@ -75,6 +76,17 @@ private fun StudioApp() {
     val prefs = remember { context.getSharedPreferences("studio", 0) }
     val workspace = remember { File(context.filesDir, "workspace").apply { mkdirs() } }
     var page by remember { mutableStateOf("خانه") }
+    val pageHistory = remember { mutableStateListOf<String>() }
+    fun navigateTo(target: String) {
+        if (target != page) {
+            pageHistory.add(page)
+            page = target
+        }
+    }
+    fun goBack() {
+        page = if (pageHistory.isNotEmpty()) pageHistory.removeAt(pageHistory.lastIndex) else "خانه"
+    }
+    BackHandler(enabled = page != "خانه") { goBack() }
     val projects = remember {
         mutableStateListOf<String>().apply {
             try {
@@ -86,6 +98,10 @@ private fun StudioApp() {
     var selectedProject by remember { mutableStateOf("") }
     var selectedPath by remember { mutableStateOf("README.md") }
     var editorText by remember { mutableStateOf("") }
+    var savedEditorText by remember { mutableStateOf("") }
+    var editorFind by remember { mutableStateOf("") }
+    var editorReplace by remember { mutableStateOf("") }
+    var editorMatchCount by remember { mutableIntStateOf(0) }
     var diagnosticMessage by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf(listOf<Pair<String, String>>()) }
@@ -98,6 +114,7 @@ private fun StudioApp() {
     var previewHtml by remember { mutableStateOf("") }
     var previewUsesReact by remember { mutableStateOf(false) }
     var previewError by remember { mutableStateOf("") }
+    var previewReloadToken by remember { mutableIntStateOf(0) }
     var createType by remember { mutableStateOf("file") }
     var showCreateProject by remember { mutableStateOf(false) }
     var showCreateEntry by remember { mutableStateOf(false) }
@@ -184,20 +201,67 @@ private fun StudioApp() {
             StaticPreviewRenderer.render(workspace, selectedProject)
         }
         previewError = ""
+        previewReloadToken++
     }
     fun openFile(relative: String) {
         runCatching {
             selectedPath = relative
             editorText = WorkspaceManager(workspace).readFile(selectedProject, relative)
-            page = "ویرایشگر"
+            savedEditorText = editorText
+            editorFind = ""
+            editorReplace = ""
+            editorMatchCount = 0
+            navigateTo("ویرایشگر")
         }.onFailure { notice = it.message ?: "بازکردن فایل ناموفق بود." }
     }
     fun saveFile() {
         runCatching {
             WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, editorText)
+            savedEditorText = editorText
             notice = "فایل ذخیره شد و نسخه قبلی در تاریخچه ثبت شد."
             refreshFiles()
         }.onFailure { notice = "ذخیره فایل ناموفق بود: " + (it.message ?: "خطا") }
+    }
+    fun saveAndRunCurrentProject() {
+        runCatching {
+            require(selectedProject.isNotBlank()) { "ابتدا یک پروژه را انتخاب کن." }
+            WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, editorText)
+            savedEditorText = editorText
+            refreshFiles()
+            val root = File(workspace, selectedProject)
+            val webEntry = File(root, "index.html").isFile || File(root, "dist/index.html").isFile
+            val androidGradle = File(root, "settings.gradle").isFile || File(root, "settings.gradle.kts").isFile
+            when {
+                webEntry -> {
+                    loadProjectPreview()
+                    navigateTo("پیش‌نمایش")
+                    notice = "تغییرات ذخیره شد؛ اجرای زنده وب باز شد."
+                }
+                androidGradle -> {
+                    navigateTo("GitHub")
+                    notice = "برای اجرای واقعی اندروید، در صفحه GitHub گزینه «ارسال پروژه و ساخت APK» را بزن؛ پس از ساخت می‌توانی APK را نصب کنی."
+                }
+                else -> {
+                    notice = "برای این پروژه هنوز محیط اجرای زنده تعریف نشده است. وب و پروژه‌های Android Gradle پشتیبانی می‌شوند."
+                }
+            }
+        }.onFailure { notice = "ذخیره یا اجرا ناموفق بود: " + (it.message ?: "خطا") }
+    }
+    fun installBuiltApk() {
+        runCatching {
+            val apk = builtApkFile
+            require(apk != null && apk.isFile && apk.length() > 0L) { "ابتدا APK را دریافت کن." }
+            if (!context.packageManager.canRequestPackageInstalls()) {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
+                notice = "اجازه نصب برنامه از این منبع را فعال کن؛ سپس دوباره «نصب و اجرای APK» را بزن."
+            } else {
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
+                val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                notice = "پنجره نصب اندروید باز شد؛ نصب را تأیید کن."
+            }
+        }.onFailure { notice = "بازکردن نصب‌کننده ناموفق بود: " + (it.message ?: "خطا") }
     }
     fun persistProjects() { prefs.edit().putString("projects", JSONArray(projects).toString()).apply() }
     val exportProjectLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -251,7 +315,13 @@ private fun StudioApp() {
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().background(Panel).padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AutoAwesome, null, tint = Gold, modifier = Modifier.size(28.dp))
+                if (page != "خانه") {
+                    IconButton(onClick = { goBack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "بازگشت", tint = Gold)
+                    }
+                } else {
+                    Icon(Icons.Default.AutoAwesome, null, tint = Gold, modifier = Modifier.size(28.dp))
+                }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("YASIN AI APP STUDIO", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
@@ -273,7 +343,7 @@ private fun StudioApp() {
                         }
                     }
                     listOf("پروژه‌ها" to "مدیریت پروژه‌ها و پوشه‌ها", "ویرایشگر" to "مدیریت فایل و کد", "هوش مصنوعی" to "دستیار برنامه‌نویسی", "ساخت APK" to "ساخت و دریافت فایل نصب اندروید", "تنظیمات" to "تنظیم اتصال مدل").forEach { item ->
-                        Card(Modifier.fillMaxWidth().clickable { page = if (item.first == "ساخت APK") "GitHub" else item.first }, colors = CardDefaults.cardColors(containerColor = Panel)) {
+                        Card(Modifier.fillMaxWidth().clickable { navigateTo(if (item.first == "ساخت APK") "GitHub" else item.first) }, colors = CardDefaults.cardColors(containerColor = Panel)) {
                             Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(item.first, color = Color.White, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.weight(1f))
@@ -287,7 +357,7 @@ private fun StudioApp() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("پروژه‌ها و فایل‌ها", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         TextButton(onClick = { importProjectLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed")) }) { Text("ورود ZIP") }
-                        TextButton(onClick = { if (selectedProject.isNotBlank()) exportProjectLauncher.launch("$selectedProject.zip") else notice = "ابتدا یک پروژه را باز کنید." }) { Text("خروجی ZIP") }
+                        TextButton(onClick = { if (selectedProject.isNotBlank()) exportProjectLauncher.launch("$selectedProject.zip") else notice = "ابتدا یک پروژه را باز کنید." }) { Text("ذخیره پروژه") }
                         Button(onClick = { showCreateProject = true }) { Icon(Icons.Default.Add, null); Text("پروژه") }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -296,7 +366,7 @@ private fun StudioApp() {
                             Text("پروژه فعال: $selectedProject", color = Gold, modifier = Modifier.weight(1f))
                             TextButton(onClick = { showCreateEntry = true }) { Text("فایل/پوشه جدید") }
                             TextButton(onClick = {
-                                runCatching { loadProjectPreview(); page = "پیش‌نمایش" }
+                                runCatching { loadProjectPreview(); navigateTo("پیش‌نمایش") }
                                     .onFailure { previewError = it.message ?: "ساخت پیش‌نمایش ناموفق بود."; notice = previewError }
                             }) { Text("پیش‌نمایش وب") }
                         }
@@ -379,7 +449,7 @@ private fun StudioApp() {
                     }
                     Text(if (previewUsesReact) "پیش‌نمایش سریع React تک‌فایلی. برای پروژه چندفایلی: کد را به GitHub بفرستید، workflow با نام React Web Build را اجرا کنید، فایل react-web-dist را دانلود و ZIP آن را به‌عنوان پروژه وارد کنید؛ سپس خروجی ساخته‌شده به‌صورت کامل پیش‌نمایش می‌شود." else "فایل‌های HTML، CSS، JavaScript، ماژول‌ها و دارایی‌های محلی پروژه از فضای محدودشده همان پروژه بارگذاری می‌شوند؛ درخواست شبکه خارجی مسدود است.", color = Muted, fontSize = 11.sp)
                     if (previewError.isNotBlank()) Text(previewError, color = Color(0xFFFF8888), fontSize = 12.sp)
-                    key(selectedProject, previewHtml, previewUsesReact) {
+                    key(selectedProject, previewHtml, previewUsesReact, previewReloadToken) {
                         AndroidView(modifier = Modifier.fillMaxSize().weight(1f), factory = { ctx ->
                             val projectRoot = if (previewUsesReact) File(workspace, selectedProject).canonicalFile
                                 else StaticPreviewRenderer.previewRoot(workspace, selectedProject)
@@ -431,6 +501,7 @@ private fun StudioApp() {
                         Column(Modifier.weight(1f)) {
                             Text("ویرایشگر کد", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                             Text("$selectedProject / $selectedPath", color = Muted, fontSize = 11.sp)
+                            Text(if (editorText != savedEditorText) "● تغییرات ذخیره‌نشده" else "✓ همه تغییرات ذخیره شده‌اند", color = if (editorText != savedEditorText) Gold else Color(0xFF70D6A0), fontSize = 10.sp)
                         }
                         TextButton(onClick = {
                             runCatching { historyItems = FileHistory.list(workspace, selectedProject, selectedPath); showHistory = true }
@@ -461,7 +532,57 @@ private fun StudioApp() {
                         }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Build, null); Text("بررسی و اصلاح امن") }
                         Button(onClick = { saveFile() }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Save, null); Text("ذخیره") }
                     }
-                    BasicTextField(value = editorText, onValueChange = { editorText = it },
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(
+                                value = editorFind,
+                                onValueChange = { value ->
+                                    editorFind = value
+                                    editorMatchCount = if (value.isBlank()) 0 else Regex(Regex.escape(value), RegexOption.IGNORE_CASE).findAll(editorText).count()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                label = { Text("جست‌وجو در فایل باز") }
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = editorReplace,
+                                    onValueChange = { editorReplace = it },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    label = { Text("جایگزینی با") }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        if (editorFind.isBlank()) {
+                                            notice = "عبارت جست‌وجو را وارد کن."
+                                        } else {
+                                            val regex = Regex(Regex.escape(editorFind), RegexOption.IGNORE_CASE)
+                                            val count = regex.findAll(editorText).count()
+                                            editorText = regex.replace(editorText) { editorReplace }
+                                            editorMatchCount = 0
+                                            notice = "$count مورد در ویرایشگر جایگزین شد؛ برای ثبت در فایل ذخیره را بزن."
+                                        }
+                                    },
+                                    enabled = editorFind.isNotBlank() && editorMatchCount > 0
+                                ) { Text("جایگزین همه") }
+                            }
+                            Text(
+                                if (editorFind.isBlank()) "جست‌وجو و جایگزینی فقط روی فایل باز انجام می‌شود."
+                                else "$editorMatchCount مورد پیدا شد",
+                                color = Muted,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                    Button(onClick = { saveAndRunCurrentProject() }, enabled = selectedProject.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("ذخیره و اجرای زنده / ساخت APK")
+                    }
+                    BasicTextField(value = editorText, onValueChange = {
+                        editorText = it
+                        editorMatchCount = if (editorFind.isBlank()) 0 else Regex(Regex.escape(editorFind), RegexOption.IGNORE_CASE).findAll(it).count()
+                    },
                         modifier = Modifier.fillMaxSize().weight(1f).background(Color(0xFF050D18), RoundedCornerShape(10.dp)).padding(14.dp),
                         textStyle = TextStyle(color = Color(0xFFB8D8FF), fontSize = 13.sp, lineHeight = 20.sp))
                     if (diagnosticMessage.isNotBlank()) Text(diagnosticMessage, color = Gold, fontSize = 11.sp)
@@ -603,6 +724,11 @@ private fun StudioApp() {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(buildRunUrl)))
                         }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش ساخت در GitHub") }
                     }
+                    if (builtApkFile?.isFile == true) {
+                        Button(onClick = { installBuiltApk() }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.GetApp, null); Spacer(Modifier.width(8.dp)); Text("نصب و اجرای APK روی گوشی")
+                        }
+                    }
                     if (buildSucceeded && buildRunId > 0L) {
                         Button(onClick = {
                             buildBusy = true
@@ -610,7 +736,7 @@ private fun StudioApp() {
                             scope.launch {
                                 runCatching {
                                     withContext(Dispatchers.IO) {
-                                        val output = File(context.cacheDir, "studio-apk-$buildRunId.apk")
+                                        val output = File(File(context.cacheDir, "studio-apks").apply { mkdirs() }, "studio-apk-$buildRunId.apk")
                                         GitHubAndroidBuild.downloadApk(githubToken, buildRunId, output)
                                         output
                                     }
@@ -717,7 +843,7 @@ private fun StudioApp() {
                                         selectedProject = webBuildProjectName
                                         refreshFiles()
                                         loadProjectPreview()
-                                        page = "پیش‌نمایش"
+                                        navigateTo("پیش‌نمایش")
                                     }.onSuccess {
                                         webBuildStatus = "خروجی دریافت شد؛ پیش‌نمایش محلی آماده است."
                                     }.onFailure {
@@ -750,6 +876,7 @@ private fun StudioApp() {
                             Text("استودیوی هوشمند ساخت برنامه", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                             Text(if (selectedProject.isBlank()) "ایده یا عکس را بفرست؛ برای تولید فایل‌ها پروژه‌ای را باز کن." else "پروژه فعال: $selectedProject", color = Muted, fontSize = 10.sp)
                         }
+                        if (selectedProject.isNotBlank()) TextButton(onClick = { exportProjectLauncher.launch("$selectedProject.zip") }) { Text("ذخیره پروژه") }
                         TextButton(onClick = { chatMessages.clear(); persistAiChat(); pendingAiPatches = emptyList(); pendingAiSummary = ""; reply = "" }) { Text("گفت‌وگوی جدید") }
                     }
                     if (selectedImageUri != null || visionStage.isNotBlank()) Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
@@ -797,18 +924,42 @@ private fun StudioApp() {
                         Button(onClick = {
                             val userPrompt = prompt.trim().ifBlank { "این تصویر را تحلیل کن و پیشنهاد بده چگونه آن را به برنامه واقعی تبدیل کنیم." }
                             val imageUri = selectedImageUri
-                            val buildIntent = imageUri != null || listOf("بساز", "ایجاد کن", "طراحی کن", "تبدیل کن", "برنامه اندروید", "اپلیکیشن", "سایت بساز", "وب‌سایت").any { userPrompt.contains(it, ignoreCase = true) } ||
-                                listOf("create", "build", "generate", "make an app", "make a website").any { userPrompt.contains(it, ignoreCase = true) }
-                            val webIntent = listOf("وب‌سایت", "سایت بساز", "website", "web app").any { userPrompt.contains(it, ignoreCase = true) }
+                            // Every submission from this screen is treated as an implementation request.
+                            // Infer a real starter from the user's target; never silently leave a build request as chat-only.
+                            val lowerPrompt = userPrompt.lowercase(Locale.ROOT)
+                            val webIntent = listOf("وب‌سایت", "وب سایت", "سایت", "website", "web app", "frontend", "فرانت").any { lowerPrompt.contains(it) }
+                            val gameIntent = listOf("بازی", "گیم", "game", "godot", "یونیتی", "unity").any { lowerPrompt.contains(it) }
+                            val reactIntent = listOf("react", "ری‌اکت", "next.js", "nextjs", "vue", "ویو").any { lowerPrompt.contains(it) }
+                            val genericCodeIntent = listOf("python", "پایتون", "ربات", "bot", "api", "backend", "بک‌اند", "اسکریپت").any { lowerPrompt.contains(it) }
+                            val requestedTemplate = when {
+                                gameIntent -> "godot"
+                                webIntent -> if (reactIntent) "web-react" else "web-static"
+                                genericCodeIntent -> "blank"
+                                else -> "android-kotlin"
+                            }
+                            val buildIntent = true
                             val activeRoot = if (selectedProject.isBlank()) null else File(workspace, selectedProject)
                             val hasAndroidBuild = activeRoot?.let { File(it, "settings.gradle.kts").isFile || File(it, "settings.gradle").isFile } == true
                             val hasWebEntry = activeRoot?.let { File(it, "index.html").isFile || File(it, "package.json").isFile } == true
-                            val needsStarterProject = buildIntent && (selectedProject.isBlank() ||
-                                (if (webIntent) !hasWebEntry else !hasAndroidBuild))
+                            val hasGodotEntry = activeRoot?.let { File(it, "project.godot").isFile } == true
+                            val compatibleProject = when (requestedTemplate) {
+                                "web-static" -> hasWebEntry && activeRoot?.let { File(it, "package.json").isFile } != true
+                                "web-react" -> activeRoot?.let { File(it, "package.json").isFile } == true
+                                "godot" -> hasGodotEntry
+                                "android-kotlin" -> hasAndroidBuild
+                                else -> activeRoot != null
+                            }
+                            val needsStarterProject = buildIntent && (selectedProject.isBlank() || !compatibleProject)
                             if (needsStarterProject) {
                                 runCatching {
-                                    val autoName = (if (webIntent) "AI-Web-" else "AI-Android-") + System.currentTimeMillis().toString()
-                                    WorkspaceManager(workspace).createProject(autoName, if (webIntent) "web-static" else "android-kotlin")
+                                    val prefix = when (requestedTemplate) {
+                                        "web-static", "web-react" -> "AI-Web-"
+                                        "godot" -> "AI-Game-"
+                                        "blank" -> "AI-Project-"
+                                        else -> "AI-Android-"
+                                    }
+                                    val autoName = prefix + System.currentTimeMillis().toString()
+                                    WorkspaceManager(workspace).createProject(autoName, requestedTemplate)
                                     projects.add(0, autoName)
                                     persistProjects()
                                     selectedProject = autoName
@@ -820,44 +971,7 @@ private fun StudioApp() {
                             persistAiChat()
                             prompt = ""; selectedImageUri = null; selectedImageName = ""; loading = true
                             scope.launch {
-                                val projectContext = if (selectedProject.isBlank()) "" else runCatching {
-                                    val root = File(workspace, selectedProject)
-                                    val candidates = root.walkTopDown()
-                                        .filter { file ->
-                                            file.isFile &&
-                                                file.extension.lowercase() in setOf(
-                                                    "kt", "java", "xml", "gradle", "kts", "properties",
-                                                    "toml", "json", "yaml", "yml", "js", "jsx", "ts",
-                                                    "tsx", "html", "css", "scss", "md", "txt", "py",
-                                                    "swift", "dart", "go", "rs", "c", "cpp", "h", "hpp"
-                                                ) &&
-                                                !file.relativeTo(root).path.split(File.separator).any { part ->
-                                                    part.startsWith(".") || part in setOf("build", "node_modules", ".gradle", "dist")
-                                                }
-                                        }
-                                        .toList()
-                                    fun priority(file: File): Int {
-                                        val path = file.relativeTo(root).invariantSeparatorsPath.lowercase()
-                                        return when {
-                                            path == "settings.gradle" || path == "settings.gradle.kts" -> 0
-                                            path == "build.gradle" || path == "build.gradle.kts" -> 1
-                                            path.endsWith("/build.gradle") || path.endsWith("/build.gradle.kts") -> 2
-                                            path.endsWith("gradle/libs.versions.toml") -> 2
-                                            path.endsWith("androidmanifest.xml") -> 3
-                                            path.endsWith("mainactivity.kt") || path.endsWith("mainactivity.java") -> 4
-                                            path.contains("/src/main/") -> 5
-                                            path.contains("/src/test/") || path.contains("/src/androidtest/") -> 6
-                                            path == "package.json" || path == "vite.config.ts" || path == "vite.config.js" -> 2
-                                            path == "readme.md" -> 7
-                                            else -> 8
-                                        }
-                                    }
-                                    candidates.sortedWith(compareBy<File>({ priority(it) }, { it.relativeTo(root).invariantSeparatorsPath.length }))
-                                        .take(60).joinToString("\n") { file ->
-                                            val rel = file.relativeTo(root).invariantSeparatorsPath
-                                            "FILE: $rel\n" + if (file.length() <= 24000) file.readText().take(24000) else "[فایل بزرگ؛ محتوا ارسال نشد]"
-                                        }.take(48000)
-                                }.getOrDefault("")
+                                val projectContext = if (selectedProject.isBlank()) "" else StudioProjectContextBuilder.build(File(workspace, selectedProject))
                                 val result = runCatching {
                                     val imageData = imageUri?.let { uri ->
                                         withContext(Dispatchers.IO) { prepareStudioImage(context, uri) }
@@ -924,7 +1038,7 @@ private fun StudioApp() {
             }
             NavigationBar(containerColor = Panel) {
                 listOf("خانه", "پروژه‌ها", "GitHub", "هوش مصنوعی", "ویرایشگر", "پیش‌نمایش", "تنظیمات").forEach { label ->
-                    NavigationBarItem(selected = page == label, onClick = { page = label },
+                    NavigationBarItem(selected = page == label, onClick = { navigateTo(label) },
                         icon = { Icon(when (label) {
                             "خانه" -> Icons.Default.Home
                             "پروژه‌ها" -> Icons.Default.Folder
@@ -1038,7 +1152,7 @@ private fun StudioApp() {
                     val readme = File(created, "README.md")
                     selectedPath = if (readme.isFile) "README.md" else ProjectTemplates.files(selectedTemplate, name).keys.first()
                     editorText = File(created, selectedPath).takeIf { it.isFile }?.readText().orEmpty()
-                    refreshFiles(); draftName = ""; selectedTemplate = "blank"; templateSearch = ""; showCreateProject = false; page = "ویرایشگر"
+                    refreshFiles(); draftName = ""; selectedTemplate = "blank"; templateSearch = ""; showCreateProject = false; navigateTo("ویرایشگر")
                 }.onFailure { notice = it.message ?: "ساخت پروژه ناموفق بود." }
             }
         }) { Text("ایجاد") } },
@@ -1138,197 +1252,4 @@ private fun StudioApp() {
             showRename = false
         }) { Text("تغییر نام") } },
         dismissButton = { TextButton(onClick = { showRename = false }) { Text("لغو") } })
-}
-
-private fun prepareStudioImage(context: Context, uri: Uri): String {
-    val resolver = context.contentResolver
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        ?: error("خواندن تصویر ناموفق بود.")
-    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "فایل تصویر معتبر نیست." }
-
-    var sample = 1
-    while (maxOf(bounds.outWidth / sample, bounds.outHeight / sample) > 1600) sample *= 2
-    val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.RGB_565 }
-    val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
-        ?: error("رمزگشایی تصویر ناموفق بود.")
-    val output = java.io.ByteArrayOutputStream()
-    try {
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 82, output)
-        val bytes = output.toByteArray()
-        require(bytes.isNotEmpty() && bytes.size <= 5 * 1024 * 1024) {
-            "آماده‌سازی تصویر ناموفق بود؛ لطفاً تصویر دیگری انتخاب کن."
-        }
-        return "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-    } finally {
-        bitmap.recycle()
-        output.close()
-    }
-}
-
-private suspend fun analyzeStudioImage(
-    endpoint: String, model: String, key: String, imageDataUrl: String
-): String = withContext(Dispatchers.IO) {
-    require(endpoint.isNotBlank() && model.isNotBlank()) { "نشانی اتصال مدل بینایی تنظیم نشده است." }
-    val safeEndpoint = AiEndpointPolicy.validate(endpoint)
-    var conn: HttpURLConnection? = null
-    try {
-        conn = (URL(safeEndpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20000
-            readTimeout = 120000
-            doOutput = true
-            instanceFollowRedirects = false
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
-            if (key.isNotBlank()) setRequestProperty("Authorization", "Bearer $key")
-        }
-        val messages = JSONArray()
-        messages.put(JSONObject().put("role", "system").put("content",
-            "You are a senior computer-vision and UI reverse-engineering specialist. Inspect the supplied image carefully. Return STRICT JSON only: {\"analysis\":\"...\"}. Describe visible screen structure, hierarchy, components, spacing, alignment, colors with approximate hex values, typography, icons, controls, navigation, states, interactions inferable from the image, and responsive behavior. Separate observed facts from uncertain assumptions. Be detailed enough that a coding agent can recreate the interface. Do not return source code."))
-        val content = JSONArray()
-            .put(JSONObject().put("type", "text").put("text", "تحلیل بینایی دقیق این تصویر را انجام بده. تمام اجزای قابل مشاهده و ساختار صفحه را برای بازسازی دقیق استخراج کن."))
-            .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageDataUrl)))
-        messages.put(JSONObject().put("role", "user").put("content", content))
-        val payload = JSONObject().put("model", model).put("messages", messages)
-            .put("response_format", JSONObject().put("type", "json_object"))
-        conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-        val status = conn.responseCode
-        val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-        val raw = stream.bufferedReader().use { it.readText().take(2 * 1024 * 1024) }
-        if (status !in 200..299) error("خطای سرویس بینایی ($status): " + raw.take(700))
-        val response = JSONObject(raw)
-        val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
-        val cleaned = message.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val structuredAnalysis = runCatching { JSONObject(cleaned).optString("analysis") }.getOrNull()
-        structuredAnalysis?.takeIf { it.isNotBlank() }
-            ?: cleaned.takeIf { it.isNotBlank() }
-            ?: error("مدل بینایی تحلیل قابل استفاده‌ای برنگرداند.")
-    } finally {
-        conn?.disconnect()
-    }
-}
-
-private fun safeName(value: String): String = value.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(70).ifBlank { "project" }
-
-private fun safeChild(root: File, relative: String): File? {
-    val base = root.canonicalFile
-    val target = File(base, relative).canonicalFile
-    return if (target.path == base.path || target.path.startsWith(base.path + File.separator)) target else null
-}
-
-private data class AiCallResult(val text: String, val usage: AiUsage? = null)
-
-
-private data class StudioAiResult(val reply: String, val summary: String = "", val patches: List<StudioFilePatch> = emptyList(), val usage: AiUsage? = null)
-
-private suspend fun askStudioModel(
-    endpoint: String, model: String, key: String, prompt: String,
-    history: List<StudioChatMessage>, projectContext: String, imageDataUrl: String?
-): StudioAiResult = withContext(Dispatchers.IO) {
-    if (endpoint.isBlank() || model.isBlank()) return@withContext StudioAiResult("نشانی اتصال هوش مصنوعی تنظیم نشده است.")
-    val safeEndpoint = runCatching { AiEndpointPolicy.validate(endpoint) }.getOrElse {
-        return@withContext StudioAiResult("آدرس API نامعتبر است: " + (it.message ?: "فقط HTTPS مجاز است."))
-    }
-    var conn: HttpURLConnection? = null
-    try {
-        conn = (URL(safeEndpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"; connectTimeout = 20000; readTimeout = 90000; doOutput = true
-            instanceFollowRedirects = false
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
-            if (key.isNotBlank()) setRequestProperty("Authorization", "Bearer $key")
-        }
-        val messages = JSONArray()
-        val systemPrompt = """You are YASIN AI STUDIO, a principal software engineer, solution architect, senior product designer, QA engineer and autonomous coding agent. Your user speaks Persian; all user-facing explanations must be clear, natural Persian.
-ENGINEERING WORKFLOW:
-1. Understand the requested product, target platform, user flows, constraints and acceptance criteria. For a simple request, make sensible decisions and start immediately. Ask only when a missing fact would materially change the architecture or make implementation impossible.
-2. Inspect every relevant existing project file supplied in context before changing anything. Identify language, framework, package names, dependencies, entry points and existing conventions. Extend the current project; do not replace it with a toy template.
-3. Plan a coherent implementation internally. Build complete connected features, not isolated mock screens. Every visible button, menu, form, navigation item and interaction must perform its stated function.
-4. Implement production-minded code: correct architecture, reusable components, state management, validation, loading/empty/error states, accessibility, responsive layouts, secure data handling, and graceful failure. Use real APIs only when credentials/configuration are available; never invent successful network data.
-5. Add or update tests for core logic and important user flows when the project supports tests. Include setup/configuration/documentation only when required.
-6. Review your own output before returning it: check imports, symbols, dependency versions, package paths, nullability, async/threading, lifecycle, navigation, permissions, API contracts, edge cases and consistency between files. Fix issues you detect. Never knowingly return incomplete or non-compiling code.
-7. Prefer a small set of complete, integrated files over many disconnected files. Do not omit required assets/configuration. If the output budget prevents completion, state exactly what remains instead of pretending the app is complete.
-OUTPUT CONTRACT:
-- When creating or modifying files, return STRICT JSON only:
-{"reply":"Persian user-facing response","summary":"short implementation summary","files":[{"path":"relative/path","content":"complete file content"}]}
-- For ordinary questions, return {"reply":"...","summary":"","files":[]}.
-- Every returned file must contain its complete final content, never a diff, ellipsis, TODO placeholder, fake implementation or pseudocode.
-- Use only safe paths relative to the selected project root. Never emit absolute paths, .. segments, hidden paths, secrets, or executable shell scripts.
-- Never overwrite build outputs, .git, .history, Gradle caches, local.properties, keystores, signing configs or credential files.
-- Preserve existing build configuration unless a dependency/configuration change is necessary; explain required additions in the Persian reply.
-QUALITY BAR:
-- Do not use placeholder text, fake buttons, hard-coded demo records, simulated success, or empty event handlers.
-- Do not claim a feature is complete if only its UI exists. Connect UI to working logic and real persistence/API behavior.
-- For APIs, implement loading, pagination where appropriate, timeout, retry policy, validation and readable errors. Never expose secrets in client code.
-- For data-changing actions, validate input and confirm destructive actions.
-- For web apps, build a polished responsive interface for mobile and desktop with semantic HTML, keyboard support and accessible contrast.
-- For Android, respect lifecycle, permissions, background threading, Material 3 conventions and the existing Gradle/dependency versions.
-- For games, implement an actual playable loop, input, state, collision/rules and restart flow; do not deliver a static mockup.
-- For image-to-app tasks, separate observed facts from assumptions, reproduce layout hierarchy, spacing, typography, colors, icons and responsive behavior, and implement the interactions implied by the design. Never invent unseen screens as if they were shown.
-For image requests, inspect the visual specification and then create real source files consistent with the existing project's language and architecture.
-For the supplied Android Kotlin + Jetpack Compose template, preserve the exact package declaration and edit the existing app/src/main/java/.../MainActivity.kt path shown in project context. Use androidx.compose.material3 APIs, match actual dependencies in app/build.gradle.kts, and return complete compilable Kotlin files. Do not invent XML layouts for a Compose project.
-Current selected project files:
-$projectContext"""
-        messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
-        history.takeLast(16).forEach { item ->
-            if (item.role == "user" || item.role == "assistant") messages.put(JSONObject().put("role", item.role).put("content", item.content.take(10000)))
-        }
-        val userContent: Any = if (imageDataUrl.isNullOrBlank()) prompt else JSONArray()
-            .put(JSONObject().put("type", "text").put("text", prompt.ifBlank { "این تصویر را به رابط کاربری واقعی در پروژه تبدیل کن." }))
-            .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageDataUrl)))
-        messages.put(JSONObject().put("role", "user").put("content", userContent))
-        val fileSchema = JSONObject()
-            .put("type", "object")
-            .put("properties", JSONObject()
-                .put("path", JSONObject().put("type", "string"))
-                .put("content", JSONObject().put("type", "string")))
-            .put("required", JSONArray().put("path").put("content"))
-            .put("additionalProperties", false)
-        val outputSchema = JSONObject()
-            .put("type", "object")
-            .put("properties", JSONObject()
-                .put("reply", JSONObject().put("type", "string"))
-                .put("summary", JSONObject().put("type", "string"))
-                .put("files", JSONObject().put("type", "array").put("items", fileSchema)))
-            .put("required", JSONArray().put("reply").put("summary").put("files"))
-            .put("additionalProperties", false)
-        val responseFormat = JSONObject()
-            .put("type", "json_schema")
-            .put("json_schema", outputSchema)
-        val payload = JSONObject().put("model", model).put("messages", messages)
-            .put("max_tokens", 8192)
-            .put("response_format", responseFormat)
-        conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-        val status = conn.responseCode
-        val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-        val raw = stream.bufferedReader().use { it.readText().take(2 * 1024 * 1024) }
-        if (status !in 200..299) return@withContext StudioAiResult("خطای سرویس ($status): " + raw.take(1000))
-        val response = JSONObject(raw)
-        val content = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
-        val jsonText = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val parsed = runCatching { JSONObject(jsonText) }.getOrNull()
-            ?: return@withContext StudioAiResult(jsonText.take(12000), usage = AiUsageParser.parse(raw))
-        val patches = mutableListOf<StudioFilePatch>()
-        val files = parsed.optJSONArray("files") ?: JSONArray()
-        require(files.length() <= 40) { "تعداد فایل‌های پیشنهادی بیش از حد مجاز است." }
-        for (i in 0 until files.length()) {
-            val item = files.getJSONObject(i)
-            val path = item.optString("path")
-            val body = item.optString("content")
-            val parts = path.split('/')
-            require(path.isNotBlank() && !path.startsWith('/') && !path.contains('\\') &&
-                parts.none { it.isBlank() || it == "." || it == ".." || it.startsWith(".") }) { "مسیر فایل ناامن است: $path" }
-            require(!path.startsWith("build/") && !path.startsWith(".git/") &&
-                path !in listOf("local.properties", "gradle.properties", "settings.gradle", "settings.gradle.kts") &&
-                !path.contains("keystore", true) && !path.contains("secret", true) && !path.contains("credential", true)) {
-                "تغییر فایل حساس مسدود شد: $path"
-            }
-            require(body.toByteArray(Charsets.UTF_8).size <= 1024 * 1024) { "حجم فایل پیشنهادی بیش از حد مجاز است." }
-            patches += StudioFilePatch(path, body)
-        }
-        StudioAiResult(parsed.optString("reply", "پاسخ آماده شد."), parsed.optString("summary"), patches, AiUsageParser.parse(raw))
-    } catch (e: Exception) {
-        StudioAiResult("نتوانستم پاسخ ساختاریافته را پردازش کنم: " + (e.message ?: "خطای نامشخص"))
-    } finally { conn?.disconnect() }
 }
