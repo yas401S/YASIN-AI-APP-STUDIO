@@ -3,6 +3,7 @@ package com.yasin.aiappstudio
 import android.os.Bundle
 import android.content.Intent
 import android.net.Uri
+import android.util.Base64
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
@@ -104,6 +105,12 @@ private fun StudioApp() {
     var projectNameDraft by remember { mutableStateOf("") }
     var renameText by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
+    var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var attachedImageName by remember { mutableStateOf("") }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        attachedImageUri = uri
+        attachedImageName = uri?.lastPathSegment?.takeLast(48).orEmpty()
+    }
     var reply by remember { mutableStateOf("") }
     var usageSummary by remember { mutableStateOf("توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)) }
     var endpoint by remember { mutableStateOf(prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions") ?: "") }
@@ -666,12 +673,24 @@ private fun StudioApp() {
                 }
                 "هوش مصنوعی" -> Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("دستیار هوشمند", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Text("درخواست برنامه‌نویسی خود را وارد کنید.", color = Muted)
-                    OutlinedTextField(prompt, { prompt = it }, modifier = Modifier.fillMaxWidth(), minLines = 4, label = { Text("درخواست شما") })
+                    Text("درخواست برنامه‌نویسی را بنویس یا تصویر نمونه برنامه را پیوست کن.", color = Muted)
+                    OutlinedTextField(prompt, { prompt = it }, modifier = Modifier.fillMaxWidth(), minLines = 4, label = { Text("توضیح برنامه و تغییرات") })
+                    OutlinedButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text(if (attachedImageUri == null) "افزودن عکس طرح یا نمونه برنامه" else "تغییر عکس پیوست‌شده")
+                    }
+                    if (attachedImageUri != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("عکس پیوست شد: $attachedImageName", color = Gold, modifier = Modifier.weight(1f), fontSize = 11.sp)
+                            TextButton(onClick = { attachedImageUri = null; attachedImageName = "" }) { Text("حذف عکس") }
+                        }
+                    }
                     Button(onClick = {
                         loading = true
                         scope.launch {
-                            val result = askModel(endpoint, model, apiKey, prompt)
+                            val result = runCatching {
+                                val imageDataUrl = attachedImageUri?.let { readImageAsDataUrl(context, it) }
+                                askModel(endpoint, model, apiKey, prompt, imageDataUrl)
+                            }.getOrElse { AiCallResult("خواندن یا ارسال عکس ناموفق بود: " + (it.message ?: "خطای نامشخص")) }
                             reply = result.text
                             result.usage?.let { usage ->
                                 prefs.edit()
@@ -683,7 +702,7 @@ private fun StudioApp() {
                             }
                             loading = false
                         }
-                    }, enabled = !loading && prompt.isNotBlank() && apiKey.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                    }, enabled = !loading && (prompt.isNotBlank() || attachedImageUri != null) && apiKey.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                         if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Send, null)
                         Spacer(Modifier.width(8.dp)); Text(if (loading) "در حال پاسخ..." else "ارسال درخواست")
                     }
@@ -896,7 +915,27 @@ private fun safeChild(root: File, relative: String): File? {
 
 private data class AiCallResult(val text: String, val usage: AiUsage? = null)
 
-private suspend fun askModel(endpoint: String, model: String, key: String, prompt: String): AiCallResult = withContext(Dispatchers.IO) {
+private suspend fun readImageAsDataUrl(context: android.content.Context, uri: Uri): String = withContext(Dispatchers.IO) {
+    val mime = context.contentResolver.getType(uri)?.takeIf { it.startsWith("image/") }
+        ?: throw IllegalArgumentException("فایل انتخاب‌شده تصویر معتبر نیست.")
+    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > 8 * 1024 * 1024) throw IllegalArgumentException("حجم عکس باید کمتر از ۸ مگابایت باشد.")
+            output.write(buffer, 0, count)
+        }
+        output.toByteArray()
+    } ?: throw IllegalArgumentException("خواندن عکس انتخاب‌شده ممکن نیست.")
+    if (bytes.isEmpty()) throw IllegalArgumentException("فایل تصویر خالی است.")
+    "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+}
+
+private suspend fun askModel(endpoint: String, model: String, key: String, prompt: String, imageDataUrl: String? = null): AiCallResult = withContext(Dispatchers.IO) {
     if (endpoint.isBlank() || model.isBlank() || key.isBlank()) return@withContext AiCallResult("ابتدا تنظیمات اتصال را کامل کنید.")
     if (prompt.toByteArray(Charsets.UTF_8).size > 64 * 1024) {
         return@withContext AiCallResult("متن درخواست بیش از ۶۴ کیلوبایت است؛ آن را کوتاه‌تر کنید.")
@@ -913,9 +952,12 @@ private suspend fun askModel(endpoint: String, model: String, key: String, promp
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer $key")
         }
+        val userContent: Any = if (imageDataUrl.isNullOrBlank()) prompt else JSONArray()
+            .put(JSONObject().put("type", "text").put("text", prompt.ifBlank { "این تصویر را تحلیل کن و برای تبدیل آن به یک برنامه اندرویدی، ساختار صفحه‌ها و اجزای لازم را توضیح بده." }))
+            .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageDataUrl)))
         val payload = JSONObject().put("model", model).put("messages",
-            JSONArray().put(JSONObject().put("role", "system").put("content", "You are a careful software engineering assistant."))
-                .put(JSONObject().put("role", "user").put("content", prompt)))
+            JSONArray().put(JSONObject().put("role", "system").put("content", "You are a careful software engineering assistant. When given a UI image, analyze visible layout, controls, colors, and likely interactions. Do not claim files were created unless they actually were."))
+                .put(JSONObject().put("role", "user").put("content", userContent)))
         conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
         val status = conn.responseCode
         val stream = if (status in 200..299) conn.inputStream else conn.errorStream
