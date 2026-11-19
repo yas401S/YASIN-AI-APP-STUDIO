@@ -7,11 +7,13 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.activity.ComponentActivity
+import androidx.core.content.FileProvider
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -110,6 +112,7 @@ private fun StudioApp() {
     var previewHtml by remember { mutableStateOf("") }
     var previewUsesReact by remember { mutableStateOf(false) }
     var previewError by remember { mutableStateOf("") }
+    var previewReloadToken by remember { mutableIntStateOf(0) }
     var createType by remember { mutableStateOf("file") }
     var showCreateProject by remember { mutableStateOf(false) }
     var showCreateEntry by remember { mutableStateOf(false) }
@@ -196,6 +199,7 @@ private fun StudioApp() {
             StaticPreviewRenderer.render(workspace, selectedProject)
         }
         previewError = ""
+        previewReloadToken++
     }
     fun openFile(relative: String) {
         runCatching {
@@ -210,6 +214,46 @@ private fun StudioApp() {
             notice = "فایل ذخیره شد و نسخه قبلی در تاریخچه ثبت شد."
             refreshFiles()
         }.onFailure { notice = "ذخیره فایل ناموفق بود: " + (it.message ?: "خطا") }
+    }
+    fun saveAndRunCurrentProject() {
+        runCatching {
+            require(selectedProject.isNotBlank()) { "ابتدا یک پروژه را انتخاب کن." }
+            WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, editorText)
+            refreshFiles()
+            val root = File(workspace, selectedProject)
+            val webEntry = File(root, "index.html").isFile || File(root, "dist/index.html").isFile
+            val androidGradle = File(root, "settings.gradle").isFile || File(root, "settings.gradle.kts").isFile
+            when {
+                webEntry -> {
+                    loadProjectPreview()
+                    navigateTo("پیش‌نمایش")
+                    notice = "تغییرات ذخیره شد؛ اجرای زنده وب باز شد."
+                }
+                androidGradle -> {
+                    navigateTo("GitHub")
+                    notice = "برای اجرای واقعی اندروید، در صفحه GitHub گزینه «ارسال پروژه و ساخت APK» را بزن؛ پس از ساخت می‌توانی APK را نصب کنی."
+                }
+                else -> {
+                    notice = "برای این پروژه هنوز محیط اجرای زنده تعریف نشده است. وب و پروژه‌های Android Gradle پشتیبانی می‌شوند."
+                }
+            }
+        }.onFailure { notice = "ذخیره یا اجرا ناموفق بود: " + (it.message ?: "خطا") }
+    }
+    fun installBuiltApk() {
+        runCatching {
+            val apk = builtApkFile
+            require(apk != null && apk.isFile && apk.length() > 0L) { "ابتدا APK را دریافت کن." }
+            if (!context.packageManager.canRequestPackageInstalls()) {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
+                notice = "اجازه نصب برنامه از این منبع را فعال کن؛ سپس دوباره «نصب و اجرای APK» را بزن."
+            } else {
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
+                val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                notice = "پنجره نصب اندروید باز شد؛ نصب را تأیید کن."
+            }
+        }.onFailure { notice = "بازکردن نصب‌کننده ناموفق بود: " + (it.message ?: "خطا") }
     }
     fun persistProjects() { prefs.edit().putString("projects", JSONArray(projects).toString()).apply() }
     val exportProjectLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -397,7 +441,7 @@ private fun StudioApp() {
                     }
                     Text(if (previewUsesReact) "پیش‌نمایش سریع React تک‌فایلی. برای پروژه چندفایلی: کد را به GitHub بفرستید، workflow با نام React Web Build را اجرا کنید، فایل react-web-dist را دانلود و ZIP آن را به‌عنوان پروژه وارد کنید؛ سپس خروجی ساخته‌شده به‌صورت کامل پیش‌نمایش می‌شود." else "فایل‌های HTML، CSS، JavaScript، ماژول‌ها و دارایی‌های محلی پروژه از فضای محدودشده همان پروژه بارگذاری می‌شوند؛ درخواست شبکه خارجی مسدود است.", color = Muted, fontSize = 11.sp)
                     if (previewError.isNotBlank()) Text(previewError, color = Color(0xFFFF8888), fontSize = 12.sp)
-                    key(selectedProject, previewHtml, previewUsesReact) {
+                    key(selectedProject, previewHtml, previewUsesReact, previewReloadToken) {
                         AndroidView(modifier = Modifier.fillMaxSize().weight(1f), factory = { ctx ->
                             val projectRoot = if (previewUsesReact) File(workspace, selectedProject).canonicalFile
                                 else StaticPreviewRenderer.previewRoot(workspace, selectedProject)
@@ -478,6 +522,9 @@ private fun StudioApp() {
                             }
                         }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Build, null); Text("بررسی و اصلاح امن") }
                         Button(onClick = { saveFile() }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Save, null); Text("ذخیره") }
+                    }
+                    Button(onClick = { saveAndRunCurrentProject() }, enabled = selectedProject.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("ذخیره و اجرای زنده / ساخت APK")
                     }
                     BasicTextField(value = editorText, onValueChange = { editorText = it },
                         modifier = Modifier.fillMaxSize().weight(1f).background(Color(0xFF050D18), RoundedCornerShape(10.dp)).padding(14.dp),
@@ -621,6 +668,11 @@ private fun StudioApp() {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(buildRunUrl)))
                         }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش ساخت در GitHub") }
                     }
+                    if (builtApkFile?.isFile == true) {
+                        Button(onClick = { installBuiltApk() }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.InstallMobile, null); Spacer(Modifier.width(8.dp)); Text("نصب و اجرای APK روی گوشی")
+                        }
+                    }
                     if (buildSucceeded && buildRunId > 0L) {
                         Button(onClick = {
                             buildBusy = true
@@ -628,7 +680,7 @@ private fun StudioApp() {
                             scope.launch {
                                 runCatching {
                                     withContext(Dispatchers.IO) {
-                                        val output = File(context.cacheDir, "studio-apk-$buildRunId.apk")
+                                        val output = File(File(context.cacheDir, "studio-apks").apply { mkdirs() }, "studio-apk-$buildRunId.apk")
                                         GitHubAndroidBuild.downloadApk(githubToken, buildRunId, output)
                                         output
                                     }
