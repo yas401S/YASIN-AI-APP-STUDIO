@@ -92,7 +92,7 @@ class WorkspaceManager(private val root: File) {
         check(file.parentFile?.let { it.isDirectory || it.mkdirs() } != false)
         if (file.exists() && file.isFile) {
             val history = File(dir, ".history").apply { mkdirs() }
-            val safe = relativePath.replace('/', '_').replace('\\', '_')
+            val safe = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relativePath.toByteArray(Charsets.UTF_8))
             File(history, "${System.currentTimeMillis()}-$safe.snapshot").writeText(file.readText())
         }
         file.writeText(content)
