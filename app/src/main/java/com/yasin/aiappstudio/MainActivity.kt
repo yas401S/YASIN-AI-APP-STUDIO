@@ -127,8 +127,8 @@ private fun StudioApp() {
     var pendingAiSummary by remember { mutableStateOf("") }
     var showAiPatchPreview by remember { mutableStateOf(false) }
     var usageSummary by remember { mutableStateOf("توکن ثبت‌شده: ورودی " + prefs.getLong("usage_prompt", 0L) + "، خروجی " + prefs.getLong("usage_completion", 0L) + "، مجموع " + prefs.getLong("usage_total", 0L)) }
-    var endpoint by remember { mutableStateOf(prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions") ?: "") }
-    var model by remember { mutableStateOf(prefs.getString("model", "gpt-4o-mini") ?: "") }
+    var endpoint by remember { mutableStateOf("https://yasin-ai-app-studio-ai.yasinjon-401.workers.dev/v1/chat/completions") }
+    var model by remember { mutableStateOf("@cf/meta/llama-3.2-11b-vision-instruct") }
     var apiKey by remember { mutableStateOf(SecureSecretStore.read(context)) }
     var githubToken by remember { mutableStateOf(GitHubTokenStore.read(context)) }
     var githubDeviceCode by remember { mutableStateOf<GitHubDeviceCode?>(null) }
@@ -800,7 +800,7 @@ private fun StudioApp() {
                                 }
                                 loading = false
                             }
-                        }, enabled = !loading && (prompt.isNotBlank() || selectedImageUri != null) && apiKey.isNotBlank(), modifier = Modifier.weight(1f)) {
+                        }, enabled = !loading && (prompt.isNotBlank() || selectedImageUri != null) , modifier = Modifier.weight(1f)) {
                             if (loading) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Send, null)
                             Spacer(Modifier.width(5.dp)); Text("ارسال")
                         }
@@ -813,18 +813,19 @@ private fun StudioApp() {
                         }
                     }
                     if (usageSummary.isNotBlank()) Text(usageSummary, color = Muted, fontSize = 9.sp)
-                    if (apiKey.isBlank()) Text("برای فعال‌سازی هوش مصنوعی، آدرس API، مدل و کلید را در تنظیمات وارد کن.", color = Gold, fontSize = 11.sp)
+                    Text("هوش مصنوعی از طریق سرور امن Cloudflare متصل است؛ نیازی به کلید API شخصی نیست.", color = Gold, fontSize = 11.sp)
                 }
                 else -> Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("تنظیمات هوش مصنوعی", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("سرویس سازگار با OpenAI Chat Completions", color = Muted)
-                    OutlinedTextField(endpoint, { endpoint = it }, modifier = Modifier.fillMaxWidth(), label = { Text("آدرس API") }, singleLine = true)
-                    OutlinedTextField(model, { model = it }, modifier = Modifier.fillMaxWidth(), label = { Text("نام مدل") }, singleLine = true)
-                    OutlinedTextField(apiKey, { apiKey = it }, modifier = Modifier.fillMaxWidth(), label = { Text("کلید API") }, singleLine = true)
-                    Button(onClick = { prefs.edit().putString("endpoint", endpoint).putString("model", model).apply(); SecureSecretStore.write(context, apiKey); notice = "تنظیمات ذخیره شد؛ کلید با Android Keystore رمزگذاری شد." }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Save, null); Text("ذخیره تنظیمات")
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("اتصال Cloudflare Workers AI فعال است", color = Gold, fontWeight = FontWeight.Bold)
+                            Text("مدل: $model", color = Color.White, fontSize = 12.sp)
+                            Text("نشانی سرویس: $endpoint", color = Muted, fontSize = 10.sp)
+                            Text("برای استفاده از چت و تحلیل عکس، نیازی به واردکردن API URL یا کلید شخصی نیست.", color = Color.White, fontSize = 12.sp)
+                        }
                     }
-                    Text("کلید در حافظه امن Android Keystore رمزگذاری می‌شود؛ بااین‌حال برای انتشار عمومی، کلید ارائه‌دهنده باید فقط در سرور نگهداری شود و از درگاه واسط امن استفاده شود.", color = Gold, fontSize = 12.sp)
+                    Text("سهمیه رایگان مدل محدود است؛ در صورت اتمام سهمیه روزانه، سرویس تا زمان بازنشانی سهمیه پاسخ نمی‌دهد. مصرف بیشتر در طرح پولی ممکن است هزینه داشته باشد.", color = Gold, fontSize = 12.sp)
                 }
             }
             NavigationBar(containerColor = Panel) {
@@ -1048,7 +1049,7 @@ private fun StudioApp() {
 private suspend fun analyzeStudioImage(
     endpoint: String, model: String, key: String, imageDataUrl: String
 ): String = withContext(Dispatchers.IO) {
-    require(endpoint.isNotBlank() && model.isNotBlank() && key.isNotBlank()) { "تنظیمات مدل بینایی کامل نیست." }
+    require(endpoint.isNotBlank() && model.isNotBlank()) { "نشانی اتصال مدل بینایی تنظیم نشده است." }
     val safeEndpoint = AiEndpointPolicy.validate(endpoint)
     var conn: HttpURLConnection? = null
     try {
@@ -1060,7 +1061,7 @@ private suspend fun analyzeStudioImage(
             instanceFollowRedirects = false
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("Authorization", "Bearer $key")
+            if (key.isNotBlank()) setRequestProperty("Authorization", "Bearer $key")
         }
         val messages = JSONArray()
         messages.put(JSONObject().put("role", "system").put("content",
@@ -1103,7 +1104,7 @@ private suspend fun askStudioModel(
     endpoint: String, model: String, key: String, prompt: String,
     history: List<StudioChatMessage>, projectContext: String, imageDataUrl: String?
 ): StudioAiResult = withContext(Dispatchers.IO) {
-    if (endpoint.isBlank() || model.isBlank() || key.isBlank()) return@withContext StudioAiResult("ابتدا تنظیمات اتصال هوش مصنوعی را کامل کن.")
+    if (endpoint.isBlank() || model.isBlank()) return@withContext StudioAiResult("نشانی اتصال هوش مصنوعی تنظیم نشده است.")
     val safeEndpoint = runCatching { AiEndpointPolicy.validate(endpoint) }.getOrElse {
         return@withContext StudioAiResult("آدرس API نامعتبر است: " + (it.message ?: "فقط HTTPS مجاز است."))
     }
@@ -1114,7 +1115,7 @@ private suspend fun askStudioModel(
             instanceFollowRedirects = false
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("Authorization", "Bearer $key")
+            if (key.isNotBlank()) setRequestProperty("Authorization", "Bearer $key")
         }
         val messages = JSONArray()
         val systemPrompt = """You are YASIN AI, a senior Persian-speaking software engineer, product designer and coding agent.
