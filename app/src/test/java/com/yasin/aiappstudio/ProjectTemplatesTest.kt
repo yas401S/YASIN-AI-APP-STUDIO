@@ -42,7 +42,7 @@ class ProjectTemplatesTest {
         val files = ProjectTemplates.files("web-react", "React Site")
         val packageJson = files.getValue("package.json")
         assertTrue(packageJson.contains("\"build\": \"vite build\""))
-        assertTrue(packageJson.contains("\"react\": \"19.0.0\""))
+        assertTrue(packageJson.contains("\"react\": \"18.3.1\""))
         assertTrue(files.containsKey("vite.config.js"))
         assertTrue(files.containsKey("src/App.jsx"))
         assertTrue(files.containsKey("src/main.jsx"))
