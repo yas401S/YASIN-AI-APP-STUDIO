@@ -3,6 +3,8 @@ package com.yasin.aiappstudio
 import android.os.Bundle
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,6 +34,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -81,6 +84,7 @@ private fun StudioApp() {
     var draftName by remember { mutableStateOf("") }
     var selectedTemplate by remember { mutableStateOf("blank") }
     var previewHtml by remember { mutableStateOf("") }
+    var previewUsesReact by remember { mutableStateOf(false) }
     var previewError by remember { mutableStateOf("") }
     var createType by remember { mutableStateOf("file") }
     var showCreateProject by remember { mutableStateOf(false) }
@@ -110,6 +114,15 @@ private fun StudioApp() {
             .map { WorkspaceFile(it, it.relativeTo(root).invariantSeparatorsPath, it.isDirectory) }
             .sortedWith(compareBy<WorkspaceFile>({ !it.directory }, { it.relative.lowercase() })).toList()
         else emptyList()
+    }
+    fun loadProjectPreview() {
+        previewUsesReact = ReactPreviewRenderer.isReactProject(workspace, selectedProject)
+        previewHtml = if (previewUsesReact) {
+            ReactPreviewRenderer.render(workspace, selectedProject)
+        } else {
+            StaticPreviewRenderer.render(workspace, selectedProject)
+        }
+        previewError = ""
     }
     fun openFile(relative: String) {
         runCatching {
@@ -210,7 +223,7 @@ private fun StudioApp() {
                             Text("پروژه فعال: $selectedProject", color = Gold, modifier = Modifier.weight(1f))
                             TextButton(onClick = { showCreateEntry = true }) { Text("فایل/پوشه جدید") }
                             TextButton(onClick = {
-                                runCatching { previewHtml = StaticPreviewRenderer.render(workspace, selectedProject); previewError = ""; page = "پیش‌نمایش" }
+                                runCatching { loadProjectPreview(); page = "پیش‌نمایش" }
                                     .onFailure { previewError = it.message ?: "ساخت پیش‌نمایش ناموفق بود."; notice = previewError }
                             }) { Text("پیش‌نمایش وب") }
                         }
@@ -288,21 +301,32 @@ private fun StudioApp() {
                 }
                 "پیش‌نمایش" -> Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("پیش‌نمایش وب ایستا", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { runCatching { previewHtml = StaticPreviewRenderer.render(workspace, selectedProject); previewError = "" }.onFailure { previewError = it.message ?: "خطا" } }) { Text("بازخوانی") }
+                        Text(if (previewUsesReact) "پیش‌نمایش React" else "پیش‌نمایش وب ایستا", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { runCatching { loadProjectPreview() }.onFailure { previewError = it.message ?: "خطا" } }) { Text("بازخوانی") }
                     }
-                    Text("حالت آفلاین و محدود به فایل‌های محلی پروژه؛ React و اجرای سرور هنوز پشتیبانی نمی‌شوند.", color = Muted, fontSize = 11.sp)
+                    Text(if (previewUsesReact) "اجرای کامپوننت React و JSX با نسخه‌های ثابت؛ فقط CDN مجاز است و درخواست شبکه برنامه مسدود است. برای Vite کامل از Node.js استفاده کنید." else "حالت آفلاین و محدود به فایل‌های محلی پروژه.", color = Muted, fontSize = 11.sp)
                     if (previewError.isNotBlank()) Text(previewError, color = Color(0xFFFF8888), fontSize = 12.sp)
-                    key(selectedProject, previewHtml) {
+                    key(selectedProject, previewHtml, previewUsesReact) {
                         AndroidView(modifier = Modifier.fillMaxSize().weight(1f), factory = { ctx ->
                             WebView(ctx).apply {
                                 settings.javaScriptEnabled = true
                                 settings.allowFileAccess = false
                                 settings.allowContentAccess = false
-                                settings.blockNetworkLoads = true
-                                settings.domStorageEnabled = true
+                                settings.blockNetworkLoads = !previewUsesReact
+                                settings.domStorageEnabled = false
                                 settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                                webViewClient = WebViewClient()
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                                        if (!previewUsesReact) return super.shouldInterceptRequest(view, request)
+                                        val requested = request?.url?.toString().orEmpty()
+                                        return if (ReactPreviewRenderer.isAllowedAsset(requested)) {
+                                            super.shouldInterceptRequest(view, request)
+                                        } else {
+                                            WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                        }
+                                    }
+                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = true
+                                }
                                 loadDataWithBaseURL("https://studio-preview.invalid/", previewHtml, "text/html", "UTF-8", null)
                             }
                         }, update = { view -> view.loadDataWithBaseURL("https://studio-preview.invalid/", previewHtml, "text/html", "UTF-8", null) })
