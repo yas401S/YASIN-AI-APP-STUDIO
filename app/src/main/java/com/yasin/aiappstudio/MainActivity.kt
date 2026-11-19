@@ -307,7 +307,7 @@ private fun StudioApp() {
                         Text(if (previewUsesReact) "پیش‌نمایش React" else "پیش‌نمایش وب ایستا", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         TextButton(onClick = { runCatching { loadProjectPreview() }.onFailure { previewError = it.message ?: "خطا" } }) { Text("بازخوانی") }
                     }
-                    Text(if (previewUsesReact) "اجرای کامپوننت React و JSX با نسخه‌های ثابت؛ فقط CDN مجاز است و درخواست شبکه برنامه مسدود است. برای Vite کامل از Node.js استفاده کنید." else "حالت آفلاین و محدود به فایل‌های محلی پروژه.", color = Muted, fontSize = 11.sp)
+                    Text(if (previewUsesReact) "پیش‌نمایش سریع React تک‌فایلی. برای پروژه چندفایلی: کد را به GitHub بفرستید، workflow با نام React Web Build را اجرا کنید، فایل react-web-dist را دانلود و ZIP آن را به‌عنوان پروژه وارد کنید؛ سپس خروجی ساخته‌شده به‌صورت کامل پیش‌نمایش می‌شود." else "فایل‌های HTML، CSS، JavaScript، ماژول‌ها و دارایی‌های محلی پروژه از فضای محدودشده همان پروژه بارگذاری می‌شوند؛ درخواست شبکه خارجی مسدود است.", color = Muted, fontSize = 11.sp)
                     if (previewError.isNotBlank()) Text(previewError, color = Color(0xFFFF8888), fontSize = 12.sp)
                     key(selectedProject, previewHtml, previewUsesReact) {
                         AndroidView(modifier = Modifier.fillMaxSize().weight(1f), factory = { ctx ->
