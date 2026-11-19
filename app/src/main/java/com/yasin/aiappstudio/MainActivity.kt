@@ -287,7 +287,7 @@ private fun StudioApp() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("پروژه‌ها و فایل‌ها", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         TextButton(onClick = { importProjectLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed")) }) { Text("ورود ZIP") }
-                        TextButton(onClick = { if (selectedProject.isNotBlank()) exportProjectLauncher.launch("$selectedProject.zip") else notice = "ابتدا یک پروژه را باز کنید." }) { Text("خروجی ZIP") }
+                        TextButton(onClick = { if (selectedProject.isNotBlank()) exportProjectLauncher.launch("$selectedProject.zip") else notice = "ابتدا یک پروژه را باز کنید." }) { Text("ذخیره پروژه") }
                         Button(onClick = { showCreateProject = true }) { Icon(Icons.Default.Add, null); Text("پروژه") }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -750,6 +750,7 @@ private fun StudioApp() {
                             Text("استودیوی هوشمند ساخت برنامه", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                             Text(if (selectedProject.isBlank()) "ایده یا عکس را بفرست؛ برای تولید فایل‌ها پروژه‌ای را باز کن." else "پروژه فعال: $selectedProject", color = Muted, fontSize = 10.sp)
                         }
+                        if (selectedProject.isNotBlank()) TextButton(onClick = { exportProjectLauncher.launch("$selectedProject.zip") }) { Text("ذخیره پروژه") }
                         TextButton(onClick = { chatMessages.clear(); persistAiChat(); pendingAiPatches = emptyList(); pendingAiSummary = ""; reply = "" }) { Text("گفت‌وگوی جدید") }
                     }
                     if (selectedImageUri != null || visionStage.isNotBlank()) Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
@@ -797,18 +798,42 @@ private fun StudioApp() {
                         Button(onClick = {
                             val userPrompt = prompt.trim().ifBlank { "این تصویر را تحلیل کن و پیشنهاد بده چگونه آن را به برنامه واقعی تبدیل کنیم." }
                             val imageUri = selectedImageUri
-                            val buildIntent = imageUri != null || listOf("بساز", "ایجاد کن", "طراحی کن", "تبدیل کن", "برنامه اندروید", "اپلیکیشن", "سایت بساز", "وب‌سایت").any { userPrompt.contains(it, ignoreCase = true) } ||
-                                listOf("create", "build", "generate", "make an app", "make a website").any { userPrompt.contains(it, ignoreCase = true) }
-                            val webIntent = listOf("وب‌سایت", "سایت بساز", "website", "web app").any { userPrompt.contains(it, ignoreCase = true) }
+                            // Every submission from this screen is treated as an implementation request.
+                            // Infer a real starter from the user's target; never silently leave a build request as chat-only.
+                            val lowerPrompt = userPrompt.lowercase(Locale.ROOT)
+                            val webIntent = listOf("وب‌سایت", "وب سایت", "سایت", "website", "web app", "frontend", "فرانت").any { lowerPrompt.contains(it) }
+                            val gameIntent = listOf("بازی", "گیم", "game", "godot", "یونیتی", "unity").any { lowerPrompt.contains(it) }
+                            val reactIntent = listOf("react", "ری‌اکت", "next.js", "nextjs", "vue", "ویو").any { lowerPrompt.contains(it) }
+                            val genericCodeIntent = listOf("python", "پایتون", "ربات", "bot", "api", "backend", "بک‌اند", "اسکریپت").any { lowerPrompt.contains(it) }
+                            val requestedTemplate = when {
+                                gameIntent -> "godot"
+                                webIntent -> if (reactIntent) "web-react" else "web-static"
+                                genericCodeIntent -> "blank"
+                                else -> "android-kotlin"
+                            }
+                            val buildIntent = true
                             val activeRoot = if (selectedProject.isBlank()) null else File(workspace, selectedProject)
                             val hasAndroidBuild = activeRoot?.let { File(it, "settings.gradle.kts").isFile || File(it, "settings.gradle").isFile } == true
                             val hasWebEntry = activeRoot?.let { File(it, "index.html").isFile || File(it, "package.json").isFile } == true
-                            val needsStarterProject = buildIntent && (selectedProject.isBlank() ||
-                                (if (webIntent) !hasWebEntry else !hasAndroidBuild))
+                            val hasGodotEntry = activeRoot?.let { File(it, "project.godot").isFile } == true
+                            val compatibleProject = when (requestedTemplate) {
+                                "web-static" -> hasWebEntry && activeRoot?.let { File(it, "package.json").isFile } != true
+                                "web-react" -> activeRoot?.let { File(it, "package.json").isFile } == true
+                                "godot" -> hasGodotEntry
+                                "android-kotlin" -> hasAndroidBuild
+                                else -> activeRoot != null
+                            }
+                            val needsStarterProject = buildIntent && (selectedProject.isBlank() || !compatibleProject)
                             if (needsStarterProject) {
                                 runCatching {
-                                    val autoName = (if (webIntent) "AI-Web-" else "AI-Android-") + System.currentTimeMillis().toString()
-                                    WorkspaceManager(workspace).createProject(autoName, if (webIntent) "web-static" else "android-kotlin")
+                                    val prefix = when (requestedTemplate) {
+                                        "web-static", "web-react" -> "AI-Web-"
+                                        "godot" -> "AI-Game-"
+                                        "blank" -> "AI-Project-"
+                                        else -> "AI-Android-"
+                                    }
+                                    val autoName = prefix + System.currentTimeMillis().toString()
+                                    WorkspaceManager(workspace).createProject(autoName, requestedTemplate)
                                     projects.add(0, autoName)
                                     persistProjects()
                                     selectedProject = autoName
@@ -1242,7 +1267,7 @@ private suspend fun askStudioModel(
         val messages = JSONArray()
         val systemPrompt = """You are YASIN AI STUDIO, a principal software engineer, solution architect, senior product designer, QA engineer and autonomous coding agent. Your user speaks Persian; all user-facing explanations must be clear, natural Persian.
 ENGINEERING WORKFLOW:
-1. Understand the requested product, target platform, user flows, constraints and acceptance criteria. For a simple request, make sensible decisions and start immediately. Ask only when a missing fact would materially change the architecture or make implementation impossible.
+1. Treat this screen as an implementation-first coding studio. When the user asks to create, build, add, change, fix, design, or turn an idea/image into software, produce actual complete project files in the selected project's existing architecture. Infer the target platform and framework from the request; when unspecified, default to a native Android Kotlin + Jetpack Compose app. Make sensible product decisions and begin immediately. Ask only when a missing fact would materially change the architecture or make implementation impossible. Never answer a clear build request with advice alone or an empty files array.
 2. Inspect every relevant existing project file supplied in context before changing anything. Identify language, framework, package names, dependencies, entry points and existing conventions. Extend the current project; do not replace it with a toy template.
 3. Plan a coherent implementation internally. Build complete connected features, not isolated mock screens. Every visible button, menu, form, navigation item and interaction must perform its stated function.
 4. Implement production-minded code: correct architecture, reusable components, state management, validation, loading/empty/error states, accessibility, responsive layouts, secure data handling, and graceful failure. Use real APIs only when credentials/configuration are available; never invent successful network data.
@@ -1260,6 +1285,8 @@ OUTPUT CONTRACT:
 QUALITY BAR:
 - Do not use placeholder text, fake buttons, hard-coded demo records, simulated success, or empty event handlers.
 - Do not claim a feature is complete if only its UI exists. Connect UI to working logic and real persistence/API behavior.
+- For every explicit build/create/implement request, return all required source, resource, configuration, and documentation files needed for a coherent runnable project. Include tests for critical logic when the framework supports them. Do not return an empty files array for a clear implementation request; if the output budget or missing external tool prevents completion, return the best complete vertical slice and state the exact remaining work.
+- Prefer a complete, usable first version with real flows over a broad but superficial collection of screens. Implement the core user journey end-to-end before optional features.
 - For APIs, implement loading, pagination where appropriate, timeout, retry policy, validation and readable errors. Never expose secrets in client code.
 - For data-changing actions, validate input and confirm destructive actions.
 - For web apps, build a polished responsive interface for mobile and desktop with semantic HTML, keyboard support and accessible contrast.
