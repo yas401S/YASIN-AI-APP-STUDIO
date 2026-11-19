@@ -10,7 +10,7 @@ object PreviewAssetResolver {
         val canonicalRoot = root.canonicalFile
         if (!canonicalRoot.isDirectory) return null
         val decoded = URLDecoder.decode(requestPath, StandardCharsets.UTF_8.name())
-        if (decoded.isBlank() || decoded.contains('\\u0000')) return null
+        if (decoded.isBlank() || decoded.contains(0.toChar())) return null
         val relative = decoded.removePrefix("/")
         if (relative.isBlank()) return null
         val target = File(canonicalRoot, relative).canonicalFile
