@@ -23,7 +23,6 @@ class DiagnosticEngineTest {
     val text = "this ) is not code"
     // this } is a comment
     println(text
-}
 """
         val issues = DiagnosticEngine.inspect("Main.kt", source)
         assertTrue(issues.any { it.message.contains("بسته نشده") })
