@@ -113,6 +113,10 @@ private fun StudioApp() {
     var githubDeviceCode by remember { mutableStateOf<GitHubDeviceCode?>(null) }
     var githubStatus by remember { mutableStateOf(if (githubToken.isNotBlank()) "حساب GitHub متصل است." else "هنوز حساب GitHub متصل نشده است.") }
     var githubBusy by remember { mutableStateOf(false) }
+    var buildBranch by remember { mutableStateOf("") }
+    var buildStatus by remember { mutableStateOf("هنوز ساختی اجرا نشده است.") }
+    var buildRunUrl by remember { mutableStateOf("") }
+    var buildBusy by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -472,7 +476,71 @@ private fun StudioApp() {
                             githubStatus = "اتصال محلی پاک شد. برای لغو کامل دسترسی، GitHub App را از تنظیمات حساب لغو نصب کنید."
                         }, modifier = Modifier.fillMaxWidth()) { Text("قطع اتصال از این گوشی") }
                     }
-                    Text("این مرحله فقط ورود GitHub را برقرار می‌کند. ارسال پروژه، اجرای workflow، دریافت گزارش و دانلود APK هنوز باید جداگانه پیاده‌سازی و آزمایش شود.", color = Gold, fontSize = 11.sp)
+                    Divider(color = Muted.copy(alpha = 0.25f))
+                    Text("ساخت APK پروژه اندرویدی", color = Gold, fontWeight = FontWeight.Bold)
+                    Text(if (selectedProject.isBlank()) "ابتدا از بخش پروژه‌ها یک پروژه Android Kotlin را باز کن." else "پروژه فعال: $selectedProject", color = Muted, fontSize = 12.sp)
+                    Text(buildStatus, color = Gold, fontSize = 12.sp)
+                    Button(onClick = {
+                        if (githubToken.isBlank()) {
+                            buildStatus = "ابتدا GitHub را در همین صفحه متصل کن."
+                        } else if (selectedProject.isBlank()) {
+                            buildStatus = "ابتدا یک پروژه را باز کن."
+                        } else {
+                            buildBusy = true
+                            buildStatus = "در حال ارسال فایل‌های پروژه به شاخه اختصاصی GitHub..."
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        GitHubAndroidBuild.uploadProjectAndDispatch(
+                                            githubToken, File(workspace, selectedProject), selectedProject
+                                        )
+                                    }
+                                }.onSuccess { createdBranch ->
+                                    buildBranch = createdBranch
+                                    buildStatus = "پروژه ارسال شد و دستور ساخت اجرا شد. برای مشاهده نتیجه، وضعیت را بررسی کن."
+                                }.onFailure {
+                                    buildStatus = "ساخت شروع نشد: " + (it.message ?: "خطای نامشخص")
+                                }
+                                buildBusy = false
+                            }
+                        }
+                    }, enabled = !buildBusy && githubToken.isNotBlank() && selectedProject.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                        if (buildBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.Build, null)
+                        Spacer(Modifier.width(8.dp)); Text("ارسال پروژه و ساخت APK")
+                    }
+                    OutlinedButton(onClick = {
+                        if (githubToken.isBlank() || buildBranch.isBlank()) {
+                            buildStatus = "ابتدا پروژه را ارسال کن تا ساخت شروع شود."
+                        } else {
+                            buildBusy = true
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) { GitHubAndroidBuild.latestBuild(githubToken, buildBranch) }
+                                }.onSuccess { run ->
+                                    if (run == null) {
+                                        buildStatus = "اجرای ساخت هنوز در GitHub ثبت نشده است؛ چند لحظه دیگر دوباره بررسی کن."
+                                    } else {
+                                        buildRunUrl = run.htmlUrl
+                                        buildStatus = when {
+                                            run.status != "completed" -> "ساخت در حال اجراست: " + run.status
+                                            run.conclusion == "success" -> "ساخت APK موفق شد. برای دریافت فایل، گزارش اجرای GitHub را باز کن."
+                                            else -> "ساخت ناموفق بود: " + (run.conclusion ?: "نامشخص") + "؛ گزارش را باز کن."
+                                        }
+                                    }
+                                }.onFailure { buildStatus = it.message ?: "خواندن وضعیت ساخت ناموفق بود." }
+                                buildBusy = false
+                            }
+                        }
+                    }, enabled = !buildBusy && buildBranch.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                        Text("بررسی وضعیت ساخت")
+                    }
+                    if (buildRunUrl.isNotBlank()) {
+                        OutlinedButton(onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(buildRunUrl)))
+                        }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش و دریافت APK در GitHub") }
+                    }
+                    Text("ساخت در GitHub Actions انجام می‌شود. خروجی APK به‌صورت Artifact در صفحه اجرای workflow قرار می‌گیرد؛ امضای نسخه انتشار نیازمند کلید امضای خودت است.", color = Muted, fontSize = 11.sp)
                 }
                 "هوش مصنوعی" -> Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("دستیار هوشمند", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
