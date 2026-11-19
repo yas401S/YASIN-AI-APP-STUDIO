@@ -537,7 +537,7 @@ private fun StudioApp() {
                     items(ComponentLibrary.search(snippetSearch)) { snippet ->
                         Surface(
                             modifier = Modifier.fillMaxWidth().clickable {
-                                editorText = editorText.trimEnd() + if (editorText.isBlank()) snippet.code else "\\n\\n" + snippet.code
+                                editorText = editorText.trimEnd() + if (editorText.isBlank()) snippet.code else "\n\n" + snippet.code
                                 showSnippets = false
                                 diagnosticMessage = "قطعه «${snippet.title}» به انتهای فایل اضافه شد؛ برای ذخیره، دکمه ذخیره را بزنید."
                             },
