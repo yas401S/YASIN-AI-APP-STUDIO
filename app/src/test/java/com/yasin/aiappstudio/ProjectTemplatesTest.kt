@@ -73,5 +73,9 @@ class ProjectTemplatesTest {
         assertTrue(files.getValue("Player.gd").contains("move_and_slide()"))
         assertTrue(files.getValue("Coin.gd").contains("collected.emit()"))
         assertTrue(files.getValue("README.md").contains("Godot 4"))
+        assertTrue(files.containsKey("export_presets.cfg"))
+        assertTrue(files.containsKey(".github/workflows/godot.yml"))
+        assertTrue(files.getValue(".github/workflows/godot.yml").contains("--export-debug \"Linux\""))
+        assertTrue(files.getValue(".github/workflows/godot.yml").contains("godot-linux-game"))
     }
 }
