@@ -14,7 +14,7 @@ class ProjectTemplatesTest {
         assertTrue(main.value.contains("setContent"))
         assertTrue(main.value.contains("GeneratedAppTheme"))
         assertTrue(files.values.any { it.contains("com.yasin.generated.app_my_app") })
-        assertTrue(files.containsKey("app/src/test/java/com/yasin/generated/my_app/ExampleUnitTest.kt"))
+        assertTrue(files.containsKey("app/src/test/java/com/yasin/generated/app_my_app/ExampleUnitTest.kt"))
     }
 
     @Test fun staticWebsiteContainsResponsiveAccessibleAndSearchReadyAssets() {
