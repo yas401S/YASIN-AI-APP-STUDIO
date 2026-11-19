@@ -93,7 +93,13 @@ class WorkspaceManager(private val root: File) {
         if (file.exists() && file.isFile) {
             val history = File(dir, ".history").apply { mkdirs() }
             val safe = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relativePath.toByteArray(Charsets.UTF_8))
-            File(history, "${System.currentTimeMillis()}-$safe.snapshot").writeText(file.readText())
+            var stamp = System.currentTimeMillis()
+            var snapshot = File(history, "${stamp}-$safe.snapshot")
+            while (!snapshot.createNewFile()) {
+                stamp++
+                snapshot = File(history, "${stamp}-$safe.snapshot")
+            }
+            snapshot.writeText(file.readText())
         }
         file.writeText(content)
     }
