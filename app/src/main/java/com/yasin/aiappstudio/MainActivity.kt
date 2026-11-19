@@ -753,16 +753,21 @@ private fun StudioApp() {
                             val imageUri = selectedImageUri
                             val buildIntent = imageUri != null || listOf("بساز", "ایجاد کن", "طراحی کن", "تبدیل کن", "برنامه اندروید", "اپلیکیشن", "سایت بساز", "وب‌سایت").any { userPrompt.contains(it, ignoreCase = true) } ||
                                 listOf("create", "build", "generate", "make an app", "make a website").any { userPrompt.contains(it, ignoreCase = true) }
-                            if (selectedProject.isBlank() && buildIntent) {
+                            val webIntent = listOf("وب‌سایت", "سایت بساز", "website", "web app").any { userPrompt.contains(it, ignoreCase = true) }
+                            val activeRoot = if (selectedProject.isBlank()) null else File(workspace, selectedProject)
+                            val hasAndroidBuild = activeRoot?.let { File(it, "settings.gradle.kts").isFile || File(it, "settings.gradle").isFile } == true
+                            val hasWebEntry = activeRoot?.let { File(it, "index.html").isFile || File(it, "package.json").isFile } == true
+                            val needsStarterProject = buildIntent && (selectedProject.isBlank() ||
+                                (!hasAndroidBuild && !hasWebEntry))
+                            if (needsStarterProject) {
                                 runCatching {
-                                    val webIntent = listOf("وب‌سایت", "سایت بساز", "website", "web app").any { userPrompt.contains(it, ignoreCase = true) }
                                     val autoName = (if (webIntent) "AI-Web-" else "AI-Android-") + System.currentTimeMillis().toString()
                                     WorkspaceManager(workspace).createProject(autoName, if (webIntent) "web-static" else "android-kotlin")
                                     projects.add(0, autoName)
                                     persistProjects()
                                     selectedProject = autoName
                                     refreshFiles()
-                                    notice = "پروژه پایه واقعی ساخته شد: $autoName؛ فایل‌های هوش مصنوعی پس از بازبینی به همین پروژه اضافه می‌شوند."
+                                    notice = "پروژه پایه قابل ساخت ساخته شد: $autoName؛ فایل‌های هوش مصنوعی پس از بازبینی به همین پروژه اضافه می‌شوند."
                                 }.onFailure { notice = "ساخت پروژه پایه ناموفق بود: " + (it.message ?: "خطا") }
                             }
                             chatMessages.add(StudioChatMessage("user", userPrompt + if (imageUri != null) "\n[تصویر پیوست شد]" else ""))
