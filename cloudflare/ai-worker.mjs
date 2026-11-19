@@ -55,23 +55,26 @@ function extractMessages(input) {
     }
 
     if (Array.isArray(message.content)) {
-      const textParts = [];
+      const content = [];
       for (const part of message.content) {
         if (part?.type === "text" && typeof part.text === "string") {
-          textParts.push(part.text);
-        }
-        if (part?.type === "image_url") {
+          content.push({ type: "text", text: part.text.slice(0, 50000) });
+        } else if (part?.type === "image_url") {
           const imageUrl = typeof part.image_url === "string"
             ? part.image_url
             : part.image_url?.url;
           if (typeof imageUrl === "string" && imageUrl.startsWith("data:image/")) {
+            if (imageUrl.length > 11 * 1024 * 1024) {
+              throw new Error("Image too large; maximum 11 MiB");
+            }
             image ||= imageUrl;
+            content.push({ type: "image_url", image_url: { url: imageUrl } });
           }
         }
       }
       return {
         role,
-        content: textParts.join("\n").slice(0, 50000) || "Please inspect the attached image."
+        content: content.length ? content : "Please inspect the attached image."
       };
     }
 
@@ -116,10 +119,10 @@ export default {
         return json({ error: { message: "Image too large" } }, 413);
       }
 
-      const maxTokens = Math.max(64, Math.min(Number(input.max_tokens || 4096), 4096));
-      const aiInput = { messages, max_tokens: maxTokens, temperature: 0.2 };
-      if (image) aiInput.image = image;
-
+      const maxTokens = Math.max(128, Math.min(Number(input.max_tokens || 4096), 4096));
+      const aiInput = { messages, max_tokens: maxTokens, temperature: 0.15 };
+      // Keep image_url inside message content. Cloudflare's current multimodal
+      // chat format accepts the data URI there and preserves text/image pairing.
       const result = await env.AI.run(MODEL, aiInput);
       const content = typeof result?.response === "string"
         ? result.response
