@@ -1,6 +1,8 @@
 package com.yasin.aiappstudio
 
 import android.os.Bundle
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +25,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,6 +79,8 @@ private fun StudioApp() {
     var fileItems by remember { mutableStateOf(listOf<WorkspaceFile>()) }
     var draftName by remember { mutableStateOf("") }
     var selectedTemplate by remember { mutableStateOf("blank") }
+    var previewHtml by remember { mutableStateOf("") }
+    var previewError by remember { mutableStateOf("") }
     var createType by remember { mutableStateOf("file") }
     var showCreateProject by remember { mutableStateOf(false) }
     var showCreateEntry by remember { mutableStateOf(false) }
@@ -200,6 +205,10 @@ private fun StudioApp() {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("پروژه فعال: $selectedProject", color = Gold, modifier = Modifier.weight(1f))
                             TextButton(onClick = { showCreateEntry = true }) { Text("فایل/پوشه جدید") }
+                            TextButton(onClick = {
+                                runCatching { previewHtml = StaticPreviewRenderer.render(workspace, selectedProject); previewError = ""; page = "پیش‌نمایش" }
+                                    .onFailure { previewError = it.message ?: "ساخت پیش‌نمایش ناموفق بود."; notice = previewError }
+                            }) { Text("پیش‌نمایش وب") }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedTextField(searchQuery, { searchQuery = it }, modifier = Modifier.weight(1f),
@@ -273,6 +282,28 @@ private fun StudioApp() {
                     }
                     if (notice.isNotBlank()) Text(notice, color = Gold, fontSize = 12.sp)
                 }
+                "پیش‌نمایش" -> Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("پیش‌نمایش وب ایستا", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { runCatching { previewHtml = StaticPreviewRenderer.render(workspace, selectedProject); previewError = "" }.onFailure { previewError = it.message ?: "خطا" } }) { Text("بازخوانی") }
+                    }
+                    Text("حالت آفلاین و محدود به فایل‌های محلی پروژه؛ React و اجرای سرور هنوز پشتیبانی نمی‌شوند.", color = Muted, fontSize = 11.sp)
+                    if (previewError.isNotBlank()) Text(previewError, color = Color(0xFFFF8888), fontSize = 12.sp)
+                    key(selectedProject, previewHtml) {
+                        AndroidView(modifier = Modifier.fillMaxSize().weight(1f), factory = { ctx ->
+                            WebView(ctx).apply {
+                                settings.javaScriptEnabled = true
+                                settings.allowFileAccess = false
+                                settings.allowContentAccess = false
+                                settings.blockNetworkLoads = true
+                                settings.domStorageEnabled = true
+                                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                                webViewClient = WebViewClient()
+                                loadDataWithBaseURL("https://studio-preview.invalid/", previewHtml, "text/html", "UTF-8", null)
+                            }
+                        }, update = { view -> view.loadDataWithBaseURL("https://studio-preview.invalid/", previewHtml, "text/html", "UTF-8", null) })
+                    }
+                }
                 "ویرایشگر" -> Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -313,13 +344,14 @@ private fun StudioApp() {
                 }
             }
             NavigationBar(containerColor = Panel) {
-                listOf("خانه", "پروژه‌ها", "هوش مصنوعی", "ویرایشگر", "تنظیمات").forEach { label ->
+                listOf("خانه", "پروژه‌ها", "هوش مصنوعی", "ویرایشگر", "پیش‌نمایش", "تنظیمات").forEach { label ->
                     NavigationBarItem(selected = page == label, onClick = { page = label },
                         icon = { Icon(when (label) {
                             "خانه" -> Icons.Default.Home
                             "پروژه‌ها" -> Icons.Default.Folder
                             "هوش مصنوعی" -> Icons.Default.AutoAwesome
                             "ویرایشگر" -> Icons.Default.Code
+                            "پیش‌نمایش" -> Icons.Default.Visibility
                             else -> Icons.Default.Settings
                         }, contentDescription = label) }, label = { Text(label, fontSize = 9.sp) })
                 }
