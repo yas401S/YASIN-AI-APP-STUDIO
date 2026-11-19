@@ -1,6 +1,8 @@
 package com.yasin.aiappstudio
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
@@ -107,6 +109,10 @@ private fun StudioApp() {
     var endpoint by remember { mutableStateOf(prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions") ?: "") }
     var model by remember { mutableStateOf(prefs.getString("model", "gpt-4o-mini") ?: "") }
     var apiKey by remember { mutableStateOf(SecureSecretStore.read(context)) }
+    var githubToken by remember { mutableStateOf(GitHubTokenStore.read(context)) }
+    var githubDeviceCode by remember { mutableStateOf<GitHubDeviceCode?>(null) }
+    var githubStatus by remember { mutableStateOf(if (githubToken.isNotBlank()) "حساب GitHub متصل است." else "هنوز حساب GitHub متصل نشده است.") }
+    var githubBusy by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -401,6 +407,73 @@ private fun StudioApp() {
                     Text("اصلاح خودکار فعلی فقط قالب‌بندی بی‌خطر را تغییر می‌دهد؛ تشخیص خطای کامپایل و تعمیر معنایی نیازمند اجرای build و تأیید تغییرات است.", color = Muted, fontSize = 10.sp)
                     if (notice.isNotBlank()) Text(notice, color = Gold, fontSize = 11.sp)
                 }
+                "GitHub" -> Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("اتصال GitHub", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text("برای ارسال پروژه و اجرای ساخت APK، حساب GitHub خود را با Device Flow متصل کنید.", color = Muted)
+                    Text("Client ID برنامه", color = Gold, fontSize = 12.sp)
+                    Text("Iv23liSXdallpdwXkHz", color = Color.White, fontSize = 13.sp)
+                    Text(githubStatus, color = if (githubToken.isNotBlank()) Color(0xFF70D6A0) else Gold, fontSize = 12.sp)
+                    Button(onClick = {
+                        githubBusy = true
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) { GitHubDeviceFlow.requestDeviceCode("Iv23liSXdallpdwXkHz") }
+                            }.onSuccess { code ->
+                                githubDeviceCode = code
+                                githubStatus = "کد ورود آماده است. صفحه GitHub را باز کنید و کد زیر را وارد کنید."
+                            }.onFailure { githubStatus = "گرفتن کد ورود ناموفق بود: " + (it.message ?: "خطای ناشناخته") }
+                            githubBusy = false
+                        }
+                    }, enabled = !githubBusy, modifier = Modifier.fillMaxWidth()) {
+                        if (githubBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.Link, null)
+                        Spacer(Modifier.width(8.dp)); Text("دریافت کد اتصال")
+                    }
+                    githubDeviceCode?.let { code ->
+                        Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("کد یک‌بارمصرف GitHub", color = Gold)
+                                Text(code.userCode, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                                Text("این کد را فقط در صفحه رسمی GitHub وارد کنید. اعتبار: حدود ${code.expiresInSeconds / 60} دقیقه.", color = Muted, fontSize = 11.sp)
+                                Button(onClick = {
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(code.verificationUri))) }
+                                        .onFailure { githubStatus = "بازکردن مرورگر ممکن نشد." }
+                                }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن صفحه رسمی GitHub") }
+                                Button(onClick = {
+                                    githubBusy = true
+                                    scope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                GitHubDeviceFlow.pollForAccessToken("Iv23liSXdallpdwXkHz", code.deviceCode)
+                                            }
+                                        }.onSuccess { token ->
+                                            if (token.isNullOrBlank()) {
+                                                githubStatus = "هنوز تأیید نشده؛ پس از واردکردن کد دوباره بررسی کن."
+                                            } else {
+                                                GitHubTokenStore.write(context, token)
+                                                githubToken = token
+                                                githubDeviceCode = null
+                                                githubStatus = "اتصال GitHub موفق شد؛ توکن به‌صورت رمزگذاری‌شده در گوشی ذخیره شد."
+                                            }
+                                        }.onFailure { githubStatus = it.message ?: "بررسی اتصال ناموفق بود." }
+                                        githubBusy = false
+                                    }
+                                }, enabled = !githubBusy, modifier = Modifier.fillMaxWidth()) {
+                                    Text("بررسی تأیید و اتصال")
+                                }
+                            }
+                        }
+                    }
+                    if (githubToken.isNotBlank()) {
+                        OutlinedButton(onClick = {
+                            GitHubTokenStore.write(context, "")
+                            githubToken = ""
+                            githubDeviceCode = null
+                            githubStatus = "اتصال محلی پاک شد. برای لغو کامل دسترسی، GitHub App را از تنظیمات حساب لغو نصب کنید."
+                        }, modifier = Modifier.fillMaxWidth()) { Text("قطع اتصال از این گوشی") }
+                    }
+                    Text("این مرحله فقط ورود GitHub را برقرار می‌کند. ارسال پروژه، اجرای workflow، دریافت گزارش و دانلود APK هنوز باید جداگانه پیاده‌سازی و آزمایش شود.", color = Gold, fontSize = 11.sp)
+                }
                 "هوش مصنوعی" -> Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("دستیار هوشمند", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                     Text("درخواست برنامه‌نویسی خود را وارد کنید.", color = Muted)
@@ -441,12 +514,13 @@ private fun StudioApp() {
                 }
             }
             NavigationBar(containerColor = Panel) {
-                listOf("خانه", "پروژه‌ها", "هوش مصنوعی", "ویرایشگر", "پیش‌نمایش", "تنظیمات").forEach { label ->
+                listOf("خانه", "پروژه‌ها", "GitHub", "هوش مصنوعی", "ویرایشگر", "پیش‌نمایش", "تنظیمات").forEach { label ->
                     NavigationBarItem(selected = page == label, onClick = { page = label },
                         icon = { Icon(when (label) {
                             "خانه" -> Icons.Default.Home
                             "پروژه‌ها" -> Icons.Default.Folder
                             "هوش مصنوعی" -> Icons.Default.AutoAwesome
+                            "GitHub" -> Icons.Default.Link
                             "ویرایشگر" -> Icons.Default.Code
                             "پیش‌نمایش" -> Icons.Default.Visibility
                             else -> Icons.Default.Settings
