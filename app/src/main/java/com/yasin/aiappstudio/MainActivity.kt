@@ -140,6 +140,9 @@ private fun StudioApp() {
     var buildBranch by remember { mutableStateOf("") }
     var buildStatus by remember { mutableStateOf("هنوز ساختی اجرا نشده است.") }
     var buildRunUrl by remember { mutableStateOf("") }
+    var buildRunId by remember { mutableStateOf(0L) }
+    var buildSucceeded by remember { mutableStateOf(false) }
+    var builtApkFile by remember { mutableStateOf<File?>(null) }
     var buildBusy by remember { mutableStateOf(false) }
     var webBuildBranch by remember { mutableStateOf("") }
     var webBuildProjectSlug by remember { mutableStateOf("") }
@@ -210,6 +213,18 @@ private fun StudioApp() {
                 }
             }.onSuccess { notice = "فایل ZIP پروژه صادر شد." }
              .onFailure { notice = it.message ?: "خروجی گرفتن ناموفق بود." }
+        }
+    }
+    val apkSaveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri ->
+        val apk = builtApkFile
+        if (uri != null && apk?.isFile == true) scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val output = context.contentResolver.openOutputStream(uri) ?: error("ذخیره فایل APK ممکن نیست.")
+                    output.use { sink -> apk.inputStream().use { source -> source.copyTo(sink) } }
+                }
+            }.onSuccess { notice = "فایل APK ذخیره شد؛ اکنون می‌توانی آن را نصب کنی." }
+             .onFailure { notice = "ذخیره APK ناموفق بود: " + (it.message ?: "خطا") }
         }
     }
     val importProjectLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -529,6 +544,10 @@ private fun StudioApp() {
                             buildStatus = "ابتدا یک پروژه را باز کن."
                         } else {
                             buildBusy = true
+                            buildSucceeded = false
+                            buildRunId = 0L
+                            buildRunUrl = ""
+                            builtApkFile = null
                             buildStatus = "در حال ارسال فایل‌های پروژه به شاخه اختصاصی GitHub..."
                             scope.launch {
                                 runCatching {
@@ -564,9 +583,11 @@ private fun StudioApp() {
                                         buildStatus = "اجرای ساخت هنوز در GitHub ثبت نشده است؛ چند لحظه دیگر دوباره بررسی کن."
                                     } else {
                                         buildRunUrl = run.htmlUrl
+                                        buildRunId = run.id
+                                        buildSucceeded = run.status == "completed" && run.conclusion == "success"
                                         buildStatus = when {
                                             run.status != "completed" -> "ساخت در حال اجراست: " + run.status
-                                            run.conclusion == "success" -> "ساخت APK موفق شد. برای دریافت فایل، گزارش اجرای GitHub را باز کن."
+                                            run.conclusion == "success" -> "ساخت APK موفق شد؛ اکنون می‌توانی فایل را مستقیم دریافت کنی."
                                             else -> "ساخت ناموفق بود: " + (run.conclusion ?: "نامشخص") + "؛ گزارش را باز کن."
                                         }
                                     }
@@ -580,7 +601,32 @@ private fun StudioApp() {
                     if (buildRunUrl.isNotBlank()) {
                         OutlinedButton(onClick = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(buildRunUrl)))
-                        }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش و دریافت APK در GitHub") }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش ساخت در GitHub") }
+                    }
+                    if (buildSucceeded && buildRunId > 0L) {
+                        Button(onClick = {
+                            buildBusy = true
+                            buildStatus = "در حال دریافت APK ساخته‌شده از GitHub..."
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        val output = File(context.cacheDir, "studio-apk-$buildRunId.apk")
+                                        GitHubAndroidBuild.downloadApk(githubToken, buildRunId, output)
+                                        output
+                                    }
+                                }.onSuccess { apk ->
+                                    builtApkFile = apk
+                                    buildStatus = "APK دریافت شد؛ پوشه ذخیره‌سازی گوشی را انتخاب کن."
+                                    apkSaveLauncher.launch("${selectedProject.ifBlank { "Android-App" }}.apk")
+                                }.onFailure {
+                                    buildStatus = "دریافت APK ناموفق بود: " + (it.message ?: "خطای نامشخص")
+                                }
+                                buildBusy = false
+                            }
+                        }, enabled = !buildBusy && githubToken.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                            if (buildBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Download, null)
+                            Spacer(Modifier.width(8.dp)); Text("دریافت مستقیم فایل نصب APK")
+                        }
                     }
                     Text("ساخت در GitHub Actions انجام می‌شود. خروجی APK به‌صورت Artifact در صفحه اجرای workflow قرار می‌گیرد؛ امضای نسخه انتشار نیازمند کلید امضای خودت است.", color = Muted, fontSize = 11.sp)
                     Divider(color = Muted.copy(alpha = 0.25f))
