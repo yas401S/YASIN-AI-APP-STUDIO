@@ -913,44 +913,7 @@ private fun StudioApp() {
                             persistAiChat()
                             prompt = ""; selectedImageUri = null; selectedImageName = ""; loading = true
                             scope.launch {
-                                val projectContext = if (selectedProject.isBlank()) "" else runCatching {
-                                    val root = File(workspace, selectedProject)
-                                    val candidates = root.walkTopDown()
-                                        .filter { file ->
-                                            file.isFile &&
-                                                file.extension.lowercase() in setOf(
-                                                    "kt", "java", "xml", "gradle", "kts", "properties",
-                                                    "toml", "json", "yaml", "yml", "js", "jsx", "ts",
-                                                    "tsx", "html", "css", "scss", "md", "txt", "py",
-                                                    "swift", "dart", "go", "rs", "c", "cpp", "h", "hpp"
-                                                ) &&
-                                                !file.relativeTo(root).path.split(File.separator).any { part ->
-                                                    part.startsWith(".") || part in setOf("build", "node_modules", ".gradle", "dist")
-                                                }
-                                        }
-                                        .toList()
-                                    fun priority(file: File): Int {
-                                        val path = file.relativeTo(root).invariantSeparatorsPath.lowercase()
-                                        return when {
-                                            path == "settings.gradle" || path == "settings.gradle.kts" -> 0
-                                            path == "build.gradle" || path == "build.gradle.kts" -> 1
-                                            path.endsWith("/build.gradle") || path.endsWith("/build.gradle.kts") -> 2
-                                            path.endsWith("gradle/libs.versions.toml") -> 2
-                                            path.endsWith("androidmanifest.xml") -> 3
-                                            path.endsWith("mainactivity.kt") || path.endsWith("mainactivity.java") -> 4
-                                            path.contains("/src/main/") -> 5
-                                            path.contains("/src/test/") || path.contains("/src/androidtest/") -> 6
-                                            path == "package.json" || path == "vite.config.ts" || path == "vite.config.js" -> 2
-                                            path == "readme.md" -> 7
-                                            else -> 8
-                                        }
-                                    }
-                                    candidates.sortedWith(compareBy<File>({ priority(it) }, { it.relativeTo(root).invariantSeparatorsPath.length }))
-                                        .take(60).joinToString("\n") { file ->
-                                            val rel = file.relativeTo(root).invariantSeparatorsPath
-                                            "FILE: $rel\n" + if (file.length() <= 24000) file.readText().take(24000) else "[فایل بزرگ؛ محتوا ارسال نشد]"
-                                        }.take(48000)
-                                }.getOrDefault("")
+                                val projectContext = if (selectedProject.isBlank()) "" else StudioProjectContextBuilder.build(File(workspace, selectedProject))
                                 val result = runCatching {
                                     val imageData = imageUri?.let { uri ->
                                         withContext(Dispatchers.IO) { prepareStudioImage(context, uri) }
