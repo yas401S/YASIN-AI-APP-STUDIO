@@ -87,6 +87,8 @@ private fun StudioApp() {
     var showRename by remember { mutableStateOf(false) }
     var showRenameProject by remember { mutableStateOf(false) }
     var showDeleteProject by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
+    var historyItems by remember { mutableStateOf(listOf<FileSnapshot>()) }
     var projectToManage by remember { mutableStateOf("") }
     var projectNameDraft by remember { mutableStateOf("") }
     var renameText by remember { mutableStateOf("") }
@@ -310,6 +312,10 @@ private fun StudioApp() {
                             Text("ویرایشگر کد", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                             Text("$selectedProject / $selectedPath", color = Muted, fontSize = 11.sp)
                         }
+                        TextButton(onClick = {
+                            runCatching { historyItems = FileHistory.list(workspace, selectedProject, selectedPath); showHistory = true }
+                                .onFailure { notice = it.message ?: "خواندن تاریخچه ناموفق بود." }
+                        }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.History, null); Text("تاریخچه") }
                         Button(onClick = { saveFile() }, enabled = selectedProject.isNotBlank()) { Icon(Icons.Default.Save, null); Text("ذخیره") }
                     }
                     BasicTextField(value = editorText, onValueChange = { editorText = it },
@@ -358,6 +364,40 @@ private fun StudioApp() {
             }
         }
     }
+
+    if (showHistory) AlertDialog(
+        onDismissRequest = { showHistory = false },
+        title = { Text("نسخه‌های قبلی فایل") },
+        text = {
+            if (historyItems.isEmpty()) {
+                Text("برای این فایل هنوز نسخه قبلی ذخیره نشده است.")
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(historyItems, key = { it.file.name }) { snapshot ->
+                        Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(SimpleDateFormat("yyyy/MM/dd  HH:mm:ss", Locale.getDefault()).format(Date(snapshot.timestamp)), color = Color.White, fontSize = 12.sp)
+                                    Text(snapshot.file.name, color = Muted, fontSize = 9.sp, maxLines = 1)
+                                }
+                                TextButton(onClick = {
+                                    runCatching {
+                                        val oldContent = snapshot.file.readText()
+                                        WorkspaceManager(workspace).saveFile(selectedProject, selectedPath, oldContent)
+                                        editorText = oldContent
+                                        historyItems = FileHistory.list(workspace, selectedProject, selectedPath)
+                                        notice = "نسخه انتخاب‌شده بازیابی شد؛ محتوای فعلی نیز در تاریخچه نگه‌داری شد."
+                                        showHistory = false
+                                    }.onFailure { notice = "بازیابی نسخه ناموفق بود: " + (it.message ?: "خطا") }
+                                }) { Text("بازیابی") }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { showHistory = false }) { Text("بستن") } }
+    )
 
     if (showCreateProject) AlertDialog(onDismissRequest = { showCreateProject = false },
         title = { Text("ساخت پروژه") },
