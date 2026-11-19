@@ -466,20 +466,123 @@ class ExampleUnitTest {
 """
             )
             "godot" -> mapOf(
-                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "README.md" to """# $projectName
+
+بازی دوبعدی جمع‌آوری سکه برای Godot 4.3 یا جدیدتر.
+
+## اجرا
+1. Godot 4 را نصب و اجرا کنید.
+2. گزینه Import را بزنید و همین پوشه را انتخاب کنید.
+3. پروژه را باز کنید و کلید F5 را بزنید.
+4. با کلیدهای جهت‌دار یا WASD حرکت کنید و سکه‌ها را جمع کنید.
+
+کدها و صحنه‌ها قابل ویرایش‌اند. اجرای مستقیم موتور Godot داخل اپ استودیو هنوز فعال نیست؛ پیش‌نمایش داخلی فعلی مخصوص پروژه‌های وب است.
+""",
                 "project.godot" to """config_version=5
 [application]
 config/name="$safeTitle"
 run/main_scene="res://Main.tscn"
+[display]
+window/size/viewport_width=960
+window/size/viewport_height=540
+window/stretch/mode="canvas_items"
 [rendering]
 renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
 """,
-                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+                "Main.tscn" to """[gd_scene load_steps=3 format=3]
 [ext_resource type="Script" path="res://Main.gd" id="1"]
+[ext_resource type="PackedScene" path="res://Player.tscn" id="2"]
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
+[node name="Player" parent="." instance=ExtResource("2")]
+position = Vector2(480, 270)
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+[node name="ScoreLabel" type="Label" parent="CanvasLayer"]
+offset_left = 18.0
+offset_top = 14.0
+offset_right = 400.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 24
+text = "Coins: 0"
 """,
-                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+                "Main.gd" to """extends Node2D
+
+const COIN_SCENE = preload("res://Coin.tscn")
+const COIN_COUNT = 12
+var score := 0
+
+@onready var score_label: Label = $CanvasLayer/ScoreLabel
+
+func _ready() -> void:
+    randomize()
+    for i in range(COIN_COUNT):
+        var coin = COIN_SCENE.instantiate()
+        coin.position = Vector2(randf_range(40.0, 920.0), randf_range(70.0, 500.0))
+        coin.collected.connect(_on_coin_collected)
+        add_child(coin)
+
+func _on_coin_collected() -> void:
+    score += 1
+    score_label.text = "Coins: %d / %d" % [score, COIN_COUNT]
+    if score == COIN_COUNT:
+        score_label.text = "You win! All coins collected."
+""",
+                "Player.tscn" to """[gd_scene load_steps=3 format=3]
+[ext_resource type="Script" path="res://Player.gd" id="1"]
+[sub_resource type="CircleShape2D" id="CircleShape2D_player"]
+radius = 16.0
+[node name="Player" type="CharacterBody2D" groups=["player"]]
+script = ExtResource("1")
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_player")
+[node name="Body" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(-14, -12, 14, -12, 17, 0, 14, 12, -14, 12, -17, 0)
+color = Color(0.2, 0.55, 1, 1)
+""",
+                "Player.gd" to """extends CharacterBody2D
+
+@export var speed := 260.0
+
+func _physics_process(_delta: float) -> void:
+    var direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+    if Input.is_key_pressed(KEY_A):
+        direction.x -= 1.0
+    if Input.is_key_pressed(KEY_D):
+        direction.x += 1.0
+    if Input.is_key_pressed(KEY_W):
+        direction.y -= 1.0
+    if Input.is_key_pressed(KEY_S):
+        direction.y += 1.0
+    velocity = direction.normalized() * speed
+    move_and_slide()
+    var bounds := get_viewport_rect().size
+    position = position.clamp(Vector2(16, 16), bounds - Vector2(16, 16))
+""",
+                "Coin.tscn" to """[gd_scene load_steps=3 format=3]
+[ext_resource type="Script" path="res://Coin.gd" id="1"]
+[sub_resource type="CircleShape2D" id="CircleShape2D_coin"]
+radius = 13.0
+[node name="Coin" type="Area2D"]
+script = ExtResource("1")
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_coin")
+[node name="Icon" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(0, -12, 9, 0, 0, 12, -9, 0)
+color = Color(1, 0.78, 0.15, 1)
+""",
+                "Coin.gd" to """extends Area2D
+
+signal collected
+
+func _ready() -> void:
+    body_entered.connect(_on_body_entered)
+
+func _on_body_entered(body: Node2D) -> void:
+    if body.is_in_group("player"):
+        collected.emit()
+        queue_free()
+"""
             )
             else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
         }
