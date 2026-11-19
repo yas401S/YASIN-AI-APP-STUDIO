@@ -217,7 +217,7 @@ Compile/target SDK: 35
 UI: Jetpack Compose Material 3
 Unit tests: gradle testDebugUnitTest
 
-This is a complete source starter, not a prebuilt APK. It does not contain Android SDK files or a signing key.
+This is a complete source starter, not a prebuilt APK. It does not contain Android SDK files or a signing key. After pushing the project to GitHub, the included workflow runs unit tests and creates a downloadable debug APK.
 """,
                 "settings.gradle.kts" to """pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
 dependencyResolutionManagement {
@@ -236,6 +236,41 @@ include(":app")
                 "gradle.properties" to "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8\norg.gradle.parallel=true\nandroid.useAndroidX=true\nkotlin.code.style=official\n",
                 "gradle/wrapper/gradle-wrapper.properties" to "distributionBase=GRADLE_USER_HOME\ndistributionPath=wrapper/dists\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-bin.zip\nnetworkTimeout=10000\nvalidateDistributionUrl=true\nzipStoreBase=GRADLE_USER_HOME\nzipStorePath=wrapper/dists\n",
                 ".gitignore" to "*.iml\n.gradle/\n.idea/\nlocal.properties\n.DS_Store\n/build/\n**/build/\ncaptures/\n.externalNativeBuild/\n.cxx/\n*.jks\n*.keystore\nsecrets.properties\n",
+                ".github/workflows/android.yml" to """name: Android Build
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Run unit tests
+        run: gradle --no-daemon testDebugUnitTest
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+""",
                 "app/build.gradle.kts" to """plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
