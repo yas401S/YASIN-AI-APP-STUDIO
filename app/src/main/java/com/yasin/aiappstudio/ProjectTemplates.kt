@@ -13,6 +13,7 @@ object ProjectTemplates {
     )
 
     fun files(templateId: String, projectName: String): Map<String, String> {
+        val dollar = 36.toChar()
         val safeTitle = projectName.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$")
         val slug = projectName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(48).ifBlank { "new-project" }
         val appId = "com.yasin.generated.app_" + slug.replace('-', '_')
@@ -284,193 +285,25 @@ jobs:
       - name: Prepare release signing key
         id: signing
         env:
-          ANDROID_KEYSTORE_BASE64: ${'{{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEY_ALIAS: __K__{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: __K__{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEYSTORE_BASE64: $dollar{{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: $dollar{{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: $dollar{{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: $dollar{{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ] || [ -z "$ANDROID_STORE_PASSWORD" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$dollar{ANDROID_KEYSTORE_BASE64}" ] || [ -z "$dollar{ANDROID_KEY_ALIAS}" ] || [ -z "$dollar{ANDROID_KEY_PASSWORD}" ] || [ -z "$dollar{ANDROID_STORE_PASSWORD}" ]; then
+            echo "configured=false" >> "$dollar{GITHUB_OUTPUT}"
             echo "::notice::Signing secrets are missing; signed APK/AAB generation was skipped."
             exit 0
           fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
-          echo "configured=true" >> "$GITHUB_OUTPUT"
+          printf '%s' "$dollar{ANDROID_KEYSTORE_BASE64}" | base64 --decode > "$dollar{RUNNER_TEMP}/release.keystore"
+          echo "configured=true" >> "$dollar{GITHUB_OUTPUT}"
       - name: Build signed release APK and AAB
         if: steps.signing.outputs.configured == 'true'
         env:
-          ANDROID_KEYSTORE_FILE: __K__{{ runner.temp }}/release.keystore
-          ANDROID_KEY_ALIAS: __K__{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: __K__{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
-      - name: Upload signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signed-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-""",
-}{{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEY_ALIAS: ${'{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: __K__{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ] || [ -z "$ANDROID_STORE_PASSWORD" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Signing secrets are missing; signed APK/AAB generation was skipped."
-            exit 0
-          fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
-          echo "configured=true" >> "$GITHUB_OUTPUT"
-      - name: Build signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        env:
-          ANDROID_KEYSTORE_FILE: __K__{{ runner.temp }}/release.keystore
-          ANDROID_KEY_ALIAS: __K__{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: __K__{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
-      - name: Upload signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signed-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-""",
-}{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${'{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ] || [ -z "$ANDROID_STORE_PASSWORD" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Signing secrets are missing; signed APK/AAB generation was skipped."
-            exit 0
-          fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
-          echo "configured=true" >> "$GITHUB_OUTPUT"
-      - name: Build signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        env:
-          ANDROID_KEYSTORE_FILE: __K__{{ runner.temp }}/release.keystore
-          ANDROID_KEY_ALIAS: __K__{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: __K__{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
-      - name: Upload signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signed-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-""",
-}{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: ${'{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ] || [ -z "$ANDROID_STORE_PASSWORD" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Signing secrets are missing; signed APK/AAB generation was skipped."
-            exit 0
-          fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
-          echo "configured=true" >> "$GITHUB_OUTPUT"
-      - name: Build signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        env:
-          ANDROID_KEYSTORE_FILE: __K__{{ runner.temp }}/release.keystore
-          ANDROID_KEY_ALIAS: __K__{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: __K__{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
-      - name: Upload signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signed-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-""",
-}{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ] || [ -z "$ANDROID_STORE_PASSWORD" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Signing secrets are missing; signed APK/AAB generation was skipped."
-            exit 0
-          fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
-          echo "configured=true" >> "$GITHUB_OUTPUT"
-      - name: Build signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        env:
-          ANDROID_KEYSTORE_FILE: ${'{{ runner.temp }}/release.keystore
-          ANDROID_KEY_ALIAS: __K__{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: __K__{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
-      - name: Upload signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signed-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-""",
-}{{ runner.temp }}/release.keystore
-          ANDROID_KEY_ALIAS: ${'{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: __K__{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
-      - name: Upload signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signed-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-""",
-}{{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${'{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: __K__{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
-      - name: Upload signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signed-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-""",
-}{{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: ${'{{ secrets.ANDROID_STORE_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
-      - name: Upload signed release APK and AAB
-        if: steps.signing.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signed-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-""",
-}{{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEYSTORE_FILE: $dollar{{ runner.temp }}/release.keystore
+          ANDROID_KEY_ALIAS: $dollar{{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: $dollar{{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: $dollar{{ secrets.ANDROID_STORE_PASSWORD }}
         run: gradle --no-daemon assembleRelease bundleRelease
       - name: Upload signed release APK and AAB
         if: steps.signing.outputs.configured == 'true'
