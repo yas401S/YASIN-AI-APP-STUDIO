@@ -634,11 +634,19 @@ private data class AiCallResult(val text: String, val usage: AiUsage? = null)
 
 private suspend fun askModel(endpoint: String, model: String, key: String, prompt: String): AiCallResult = withContext(Dispatchers.IO) {
     if (endpoint.isBlank() || model.isBlank() || key.isBlank()) return@withContext AiCallResult("ابتدا تنظیمات اتصال را کامل کنید.")
+    if (prompt.toByteArray(Charsets.UTF_8).size > 64 * 1024) {
+        return@withContext AiCallResult("متن درخواست بیش از ۶۴ کیلوبایت است؛ آن را کوتاه‌تر کنید.")
+    }
+    val safeEndpoint = runCatching { AiEndpointPolicy.validate(endpoint) }.getOrElse {
+        return@withContext AiCallResult("آدرس API نامعتبر است: " + (it.message ?: "فقط HTTPS مجاز است."))
+    }
     var conn: HttpURLConnection? = null
     try {
-        conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"; connectTimeout = 20000; readTimeout = 60000; doOutput = true
+        conn = (URL(safeEndpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; connectTimeout = 15000; readTimeout = 45000; doOutput = true
+            instanceFollowRedirects = false
             setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer $key")
         }
         val payload = JSONObject().put("model", model).put("messages",
@@ -647,8 +655,21 @@ private suspend fun askModel(endpoint: String, model: String, key: String, promp
         conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
         val status = conn.responseCode
         val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-        val raw = stream.bufferedReader().use { it.readText() }
-        if (status !in 200..299) AiCallResult("خطای سرویس ($status): " + raw.take(1200))
+        val raw = stream.bufferedReader().use { reader ->
+            val output = StringBuilder()
+            val buffer = CharArray(4096)
+            while (true) {
+                val count = reader.read(buffer)
+                if (count < 0) break
+                if (output.length + count > 2 * 1024 * 1024) {
+                    throw IllegalStateException("پاسخ سرویس از ۲ مگابایت بیشتر است.")
+                }
+                output.append(buffer, 0, count)
+            }
+            output.toString()
+        }
+        if (status in 300..399) AiCallResult("سرویس تغییر مسیر داد؛ برای جلوگیری از افشای کلید، انتقال خودکار مسدود شد.")
+        else if (status !in 200..299) AiCallResult("خطای سرویس ($status): " + raw.take(1200))
         else {
             val response = JSONObject(raw)
             val text = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "پاسخ خالی بود.")
