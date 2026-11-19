@@ -117,6 +117,10 @@ private fun StudioApp() {
     var buildStatus by remember { mutableStateOf("هنوز ساختی اجرا نشده است.") }
     var buildRunUrl by remember { mutableStateOf("") }
     var buildBusy by remember { mutableStateOf(false) }
+    var webBuildBranch by remember { mutableStateOf("") }
+    var webBuildStatus by remember { mutableStateOf("هنوز ساخت وب اجرا نشده است.") }
+    var webBuildRunUrl by remember { mutableStateOf("") }
+    var webBuildBusy by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -541,6 +545,72 @@ private fun StudioApp() {
                         }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش و دریافت APK در GitHub") }
                     }
                     Text("ساخت در GitHub Actions انجام می‌شود. خروجی APK به‌صورت Artifact در صفحه اجرای workflow قرار می‌گیرد؛ امضای نسخه انتشار نیازمند کلید امضای خودت است.", color = Muted, fontSize = 11.sp)
+                    Divider(color = Muted.copy(alpha = 0.25f))
+                    Text("ساخت سایت و وب‌اپ", color = Gold, fontWeight = FontWeight.Bold)
+                    Text("پروژه فعال باید قالب وب HTML/CSS/JS یا React/Vite داشته باشد.", color = Muted, fontSize = 12.sp)
+                    Text(webBuildStatus, color = Gold, fontSize = 12.sp)
+                    Button(onClick = {
+                        if (githubToken.isBlank()) {
+                            webBuildStatus = "ابتدا GitHub را در همین صفحه متصل کن."
+                        } else if (selectedProject.isBlank()) {
+                            webBuildStatus = "ابتدا یک پروژه وب را باز کن."
+                        } else {
+                            webBuildBusy = true
+                            webBuildStatus = "در حال اعتبارسنجی و ارسال فایل‌های سایت به GitHub..."
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        GitHubWebBuild.uploadProjectAndDispatch(
+                                            githubToken, File(workspace, selectedProject), selectedProject
+                                        )
+                                    }
+                                }.onSuccess { createdBranch ->
+                                    webBuildBranch = createdBranch
+                                    webBuildRunUrl = ""
+                                    webBuildStatus = "پروژه وب ارسال شد و Build ابری آغاز شد؛ وضعیت را بررسی کن."
+                                }.onFailure {
+                                    webBuildStatus = "شروع Build وب ناموفق بود: " + (it.message ?: "خطای نامشخص")
+                                }
+                                webBuildBusy = false
+                            }
+                        }
+                    }, enabled = !webBuildBusy && githubToken.isNotBlank() && selectedProject.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                        if (webBuildBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.Language, null)
+                        Spacer(Modifier.width(8.dp)); Text("ارسال سایت و ساخت خروجی وب")
+                    }
+                    OutlinedButton(onClick = {
+                        if (githubToken.isBlank() || webBuildBranch.isBlank()) {
+                            webBuildStatus = "ابتدا پروژه وب را ارسال کن تا Build شروع شود."
+                        } else {
+                            webBuildBusy = true
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) { GitHubWebBuild.latestBuild(githubToken, webBuildBranch) }
+                                }.onSuccess { run ->
+                                    if (run == null) {
+                                        webBuildStatus = "اجرای Build هنوز در GitHub ثبت نشده است؛ کمی بعد دوباره بررسی کن."
+                                    } else {
+                                        webBuildRunUrl = run.htmlUrl
+                                        webBuildStatus = when {
+                                            run.status != "completed" -> "Build وب در حال اجراست: " + run.status
+                                            run.conclusion == "success" -> "Build وب موفق شد؛ خروجی dist در Artifact قرار دارد."
+                                            else -> "Build وب ناموفق بود: " + (run.conclusion ?: "نامشخص") + "؛ گزارش را باز کن."
+                                        }
+                                    }
+                                }.onFailure { webBuildStatus = it.message ?: "خواندن وضعیت Build وب ناموفق بود." }
+                                webBuildBusy = false
+                            }
+                        }
+                    }, enabled = !webBuildBusy && webBuildBranch.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                        Text("بررسی وضعیت Build وب")
+                    }
+                    if (webBuildRunUrl.isNotBlank()) {
+                        OutlinedButton(onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webBuildRunUrl)))
+                        }, modifier = Modifier.fillMaxWidth()) { Text("بازکردن گزارش و دریافت فایل سایت") }
+                    }
+                    Text("برای React/Vite، وابستگی‌ها نصب و npm run build اجرا می‌شود؛ برای HTML/CSS/JS، فایل‌های سایت در dist آماده انتشار می‌شوند. خروجی ZIP وب از Artifact اجرای GitHub قابل دریافت است.", color = Muted, fontSize = 11.sp)
                 }
                 "هوش مصنوعی" -> Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("دستیار هوشمند", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)

@@ -1,0 +1,71 @@
+name: Build User Web Project
+on:
+  workflow_dispatch:
+    inputs:
+      project_path:
+        description: Repository folder containing the website or web app
+        required: true
+        type: string
+      project_name:
+        description: Display name for the project
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_PATH: ${{ inputs.project_path }}
+      PROJECT_NAME: ${{ inputs.project_name }}
+    steps:
+      - name: Validate project path
+        shell: bash
+        run: |
+          case "$PROJECT_PATH" in
+            generated-projects/*) ;;
+            *) echo "Invalid project path"; exit 1 ;;
+          esac
+          if [[ "$PROJECT_PATH" == *".."* || "$PROJECT_PATH" == *$'\n'* ]]; then
+            echo "Unsafe path rejected"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+      - name: Build React or other Node web application
+        if: ${{ hashFiles(format('{0}/package.json', inputs.project_path)) != '' }}
+        shell: bash
+        run: |
+          cd "$PROJECT_PATH"
+          if [[ -f package-lock.json ]]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+          npm run build
+          test -f dist/index.html
+      - name: Prepare static HTML website
+        if: ${{ hashFiles(format('{0}/package.json', inputs.project_path)) == '' }}
+        shell: bash
+        run: |
+          test -f "$PROJECT_PATH/index.html"
+          mkdir -p "$PROJECT_PATH/dist"
+          rsync -a --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'node_modules' \
+            --exclude 'build' \
+            --exclude 'dist' \
+            "$PROJECT_PATH/" "$PROJECT_PATH/dist/"
+          test -f "$PROJECT_PATH/dist/index.html"
+      - name: Upload deployable website
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist-${{ inputs.project_name }}
+          path: ${{ inputs.project_path }}/dist/
+          if-no-files-found: error
+          retention-days: 14
