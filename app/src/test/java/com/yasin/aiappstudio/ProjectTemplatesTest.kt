@@ -46,6 +46,11 @@ class ProjectTemplatesTest {
         assertTrue(files.containsKey("vite.config.js"))
         assertTrue(files.containsKey("src/App.jsx"))
         assertTrue(files.containsKey("src/main.jsx"))
+        assertTrue(files.containsKey(".github/workflows/web.yml"))
+        val workflow = files.getValue(".github/workflows/web.yml")
+        assertTrue(workflow.contains("npm install --no-audit --no-fund"))
+        assertTrue(workflow.contains("npm run build"))
+        assertTrue(workflow.contains("path: dist/"))
     }
 
     @Test fun generatedNamesAreSafeForAndroidPackageAndWebSlug() {
