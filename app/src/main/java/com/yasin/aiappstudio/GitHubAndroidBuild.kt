@@ -80,6 +80,71 @@ object GitHubAndroidBuild {
         return branch
     }
 
+    fun downloadApk(token: String, runId: Long, destination: File) {
+        require(runId > 0L) { "شناسه اجرای ساخت معتبر نیست." }
+        val artifactsJson = JSONObject(request(token, "GET",
+            "/repos/$OWNER/$REPO/actions/runs/$runId/artifacts"))
+        val artifacts = artifactsJson.optJSONArray("artifacts") ?: JSONArray()
+        val artifact = (0 until artifacts.length()).map { artifacts.getJSONObject(it) }
+            .firstOrNull { !it.optBoolean("expired", true) && it.optString("name").contains("debug-apk") }
+            ?: error("فایل APK در خروجی ساخت پیدا نشد یا منقضی شده است.")
+        val artifactId = artifact.getLong("id")
+        val apiConnection = (URL("$API/repos/$OWNER/$REPO/actions/artifacts/$artifactId/zip").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 20000
+            readTimeout = 60000
+            instanceFollowRedirects = false
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+            setRequestProperty("User-Agent", "YASIN-AI-APP-STUDIO")
+        }
+        val signedUrl = try {
+            val code = apiConnection.responseCode
+            if (code !in 300..399) {
+                val body = apiConnection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                error("دریافت لینک فایل از GitHub ناموفق بود ($code): " + body.take(300))
+            }
+            apiConnection.getHeaderField("Location") ?: error("لینک موقت دانلود از GitHub دریافت نشد.")
+        } finally { apiConnection.disconnect() }
+
+        val download = (URL(signedUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 20000
+            readTimeout = 120000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "YASIN-AI-APP-STUDIO")
+        }
+        try {
+            val code = download.responseCode
+            if (code !in 200..299) error("دانلود فایل خروجی ناموفق بود (HTTP $code).")
+            var found = false
+            java.util.zip.ZipInputStream(download.inputStream.buffered()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (!entry.isDirectory && entry.name.endsWith(".apk", ignoreCase = true)) {
+                        destination.parentFile?.mkdirs()
+                        destination.outputStream().buffered().use { output ->
+                            val buffer = ByteArray(8192)
+                            var total = 0L
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= 250L * 1024L * 1024L) { "حجم APK بیش از حد مجاز است." }
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                        found = true
+                        break
+                    }
+                    zip.closeEntry()
+                }
+            }
+            require(found && destination.isFile && destination.length() > 0L) { "فایل APK داخل Artifact پیدا نشد." }
+        } finally { download.disconnect() }
+    }
+
     fun latestBuild(token: String, branch: String): AndroidBuildRun? {
         val encoded = URLEncoder.encode(branch, "UTF-8")
         val json = JSONObject(request(token, "GET",
