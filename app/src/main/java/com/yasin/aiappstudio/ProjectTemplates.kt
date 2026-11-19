@@ -401,7 +401,7 @@ class ExampleUnitTest {
     }
 }
 """
-            ),
+            )
             "godot" -> mapOf(
                 "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
                 "project.godot" to """config_version=5
