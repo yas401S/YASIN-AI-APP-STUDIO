@@ -162,12 +162,12 @@ Commands:
 - npm run build
 - npm run preview -- --host 0.0.0.0
 
-The in-app static preview does not run React/Vite. Use a Node.js environment for this project.
+The studio in-app preview runs the single-file src/App.jsx starter with pinned React 18.3.1 and Babel. Full Vite dev server, npm plugins and multi-file module graphs still require Node.js. Use npm install, npm run dev and npm run build for the full project.
 """,
                 "package.json" to """{
   "name": "$slug", "private": true, "version": "1.0.0", "type": "module",
   "scripts": {"dev": "vite", "build": "vite build", "preview": "vite preview"},
-  "dependencies": {"react": "19.0.0", "react-dom": "19.0.0"},
+  "dependencies": {"react": "18.3.1", "react-dom": "18.3.1"},
   "devDependencies": {"@vitejs/plugin-react": "4.3.4", "vite": "6.1.0"}
 }""",
                 "vite.config.js" to "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()], base: './' });\n",
@@ -217,7 +217,18 @@ Compile/target SDK: 35
 UI: Jetpack Compose Material 3
 Unit tests: gradle testDebugUnitTest
 
-This is a complete source starter, not a prebuilt APK. It does not contain Android SDK files or a signing key. After pushing the project to GitHub, the included workflow runs unit tests and creates a downloadable debug APK.
+This is a complete source starter, not a prebuilt APK. It does not contain Android SDK files or a signing key.
+
+## GitHub build outputs
+After pushing to the main or master branch (or starting the workflow manually), GitHub Actions runs unit tests and uploads a debug APK. A signed release APK and AAB are also built when all four repository Actions secrets are configured:
+- ANDROID_KEYSTORE_BASE64: base64 of your private .jks/.keystore file
+- ANDROID_KEY_ALIAS
+- ANDROID_KEY_PASSWORD
+- ANDROID_STORE_PASSWORD
+
+Add them in GitHub repository Settings > Secrets and variables > Actions. Never commit the keystore or passwords. Keep a secure offline backup: losing the signing key can prevent updates to the published app.
+
+The workflow deliberately skips signed release outputs when signing secrets are absent; it never creates or publishes a fake/unsigned release bundle.
 """,
                 "settings.gradle.kts" to """pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
 dependencyResolutionManagement {
@@ -236,7 +247,7 @@ include(":app")
                 "gradle.properties" to "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8\norg.gradle.parallel=true\nandroid.useAndroidX=true\nkotlin.code.style=official\n",
                 "gradle/wrapper/gradle-wrapper.properties" to "distributionBase=GRADLE_USER_HOME\ndistributionPath=wrapper/dists\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-bin.zip\nnetworkTimeout=10000\nvalidateDistributionUrl=true\nzipStoreBase=GRADLE_USER_HOME\nzipStorePath=wrapper/dists\n",
                 ".gitignore" to "*.iml\n.gradle/\n.idea/\nlocal.properties\n.DS_Store\n/build/\n**/build/\ncaptures/\n.externalNativeBuild/\n.cxx/\n*.jks\n*.keystore\nsecrets.properties\n",
-                ".github/workflows/android.yml" to """name: Android Build
+                ".github/workflows/android.yml" to """name: Android APK and AAB Build
 on:
   push:
     branches: [ main, master ]
@@ -270,6 +281,2758 @@ jobs:
           name: android-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Prepare release signing key
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}{{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}{{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}{{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}{{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          if [ -z "${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}ANDROID_KEYSTORE_BASE64" ] || [ -z "${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}ANDROID_KEY_ALIAS" ] || [ -z "${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}ANDROID_KEY_PASSWORD" ] || [ -z "${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}ANDROID_STORE_PASSWORD" ]; then
+            echo "configured=false" >> "${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}GITHUB_OUTPUT"
+            echo "::notice::Signing secrets are missing; signed APK/AAB generation was skipped."
+            exit 0
+          fi
+          printf '%s' "${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}ANDROID_KEYSTORE_BASE64" | base64 --decode > "${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}RUNNER_TEMP/release.keystore"
+          echo "configured=true" >> "${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}GITHUB_OUTPUT"
+      - name: Build signed release APK and AAB
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          ANDROID_KEYSTORE_FILE: ${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}{{ runner.temp }}/release.keystore
+          ANDROID_KEY_ALIAS: ${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}{{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}{{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${'
+                "app/build.gradle.kts" to """plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "$appId"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "$appId"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
+""",
+                "app/proguard-rules.pro" to "# Add project-specific R8 rules here when release minification is enabled.\n",
+                "app/src/main/AndroidManifest.xml" to """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="$safeTitle" android:supportsRtl="true" android:theme="@style/Theme.GeneratedApp">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>
+""",
+                "app/src/main/java/$packagePath/MainActivity.kt" to """package $appId
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import $appId.ui.theme.GeneratedAppTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            GeneratedAppTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    StarterScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterScreen() {
+    var taps by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("$safeTitle", style = MaterialTheme.typography.headlineMedium)
+        Text("پروژه اندروید شما آماده توسعه است.")
+        Button(onClick = { taps++ }) { Text("تعداد لمس: " + taps) }
+    }
+}
+""",
+                "app/src/main/java/$packagePath/ui/theme/Theme.kt" to """package $appId.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF315EE8),
+    secondary = Color(0xFF9A6B00),
+    background = Color(0xFFF7F8FC),
+    surface = Color.White
+)
+
+@Composable
+fun GeneratedAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+""",
+                "app/src/main/res/values/strings.xml" to "<resources><string name=\"app_name\">$safeTitle</string></resources>\n",
+                "app/src/main/res/values/styles.xml" to """<resources>
+    <style name="Theme.GeneratedApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315EE8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+""",
+                "app/src/test/java/$packagePath/ExampleUnitTest.kt" to """package $appId
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {
+    @Test fun arithmeticWorks() {
+        assertEquals(4, 2 + 2)
+    }
+}
+"""
+            )
+            "godot" -> mapOf(
+                "README.md" to "# $projectName\n\nپروژه Godot 2D پایه. اجرای بازی به نصب Godot نیاز دارد.\n",
+                "project.godot" to """config_version=5
+[application]
+config/name="$safeTitle"
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+""",
+                "Main.tscn" to """[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://Main.gd" id="1"]
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+""",
+                "Main.gd" to "extends Node2D\n\nfunc _ready():\n    print(\"$safeTitle is ready\")\n"
+            )
+            else -> error("قالب انتخاب‌شده پشتیبانی نمی‌شود.")
+        }
+    }
+}}{{ secrets.ANDROID_STORE_PASSWORD }}
+        run: gradle --no-daemon assembleRelease bundleRelease
+      - name: Upload signed release APK and AAB
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-signed-release
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
 """,
                 "app/build.gradle.kts" to """plugins {
     id("com.android.application")
@@ -293,6 +3056,25 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+}
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+android {
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
 }
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.02.00"))
