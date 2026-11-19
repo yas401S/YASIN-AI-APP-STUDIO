@@ -195,7 +195,34 @@ export default function App() {
 """,
                 "src/style.css" to " *{box-sizing:border-box}body{margin:0;min-width:320px;min-height:100vh;background:#f3f6fb;color:#17243a;font-family:Tahoma,Arial,sans-serif}.app{width:min(760px,calc(100% - 32px));margin:12vh auto;padding:40px;background:white;border-radius:20px;box-shadow:0 16px 55px #17243a16}.eyebrow{color:#315ee8;font-weight:700}h1{font-size:clamp(28px,5vw,48px)}p{color:#61718a}button{border:0;border-radius:10px;padding:12px 20px;background:#315ee8;color:white;font:inherit;cursor:pointer}\n".trimStart(),
                 ".gitignore" to "node_modules/\ndist/\n.DS_Store\n.env\n.env.*\n!.env.example\n",
-                ".env.example" to "# Public, non-secret Vite variables only.\n# Never put private API keys in VITE_ variables.\n"
+                ".env.example" to "# Public, non-secret Vite variables only.\\n# Never put private API keys in VITE_ variables.\\n",
+                ".github/workflows/web.yml" to """name: React Web Build
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build production website
+        run: npm run build
+      - name: Upload production website
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-web-dist
+          path: dist/
+          if-no-files-found: error
+"""
             )
             "android-kotlin" -> mapOf(
                 "README.md" to """# $projectName
