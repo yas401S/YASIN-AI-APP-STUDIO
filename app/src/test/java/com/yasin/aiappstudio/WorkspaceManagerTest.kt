@@ -28,7 +28,7 @@ class WorkspaceManagerTest {
         assertTrue(File(temp, "workspace/نمونه وب/index.html").isFile)
         assertTrue(manager.listEntries("نمونه وب").any { it.path == "style.css" })
         manager.saveFile("نمونه وب", "app.js", "const message = 'hello';")
-        assertEquals(1, manager.search("نمونه وب", "hello").size)
+        assertTrue(manager.search("نمونه وب", "hello").any { it.first.startsWith("app.js:") && it.second.contains("hello", ignoreCase = true) })
     }
 
     @Test fun savesSnapshotsAndSupportsProjectOperations() {
