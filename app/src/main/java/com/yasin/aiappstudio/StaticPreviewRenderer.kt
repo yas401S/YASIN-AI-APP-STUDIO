@@ -32,25 +32,25 @@ object StaticPreviewRenderer {
         }
 
         var html = htmlFile.readText()
-        val cssPattern = Regex("""<link\\b([^>]*?)href\\s*=\\s*["']([^"']+\\.css(?:\\?[^"']*)?)["']([^>]*)>""", RegexOption.IGNORE_CASE)
+        val cssPattern = Regex("""<link\b([^>]*?)href\s*=\s*["']([^"']+\.css(?:\?[^"']*)?)["']([^>]*)>""", RegexOption.IGNORE_CASE)
         html = cssPattern.replace(html) { match ->
             val path = match.groupValues[2]
             val asset = safeLocalFile(root, path)
             require(asset.isFile) { "فایل CSS محلی پیدا نشد: $path" }
             account(asset)
-            "<style>\\n${embedCss(asset.readText(), root, asset.parentFile)}\\n</style>"
+            "<style>\n${embedCss(asset.readText(), root, asset.parentFile)}\n</style>"
         }
 
-        val jsPattern = Regex("""<script\\b([^>]*?)src\\s*=\\s*["']([^"']+\\.js(?:\\?[^"']*)?)["']([^>]*)>\\s*</script>""", RegexOption.IGNORE_CASE)
+        val jsPattern = Regex("""<script\b([^>]*?)src\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']([^>]*)>\s*</script>""", RegexOption.IGNORE_CASE)
         html = jsPattern.replace(html) { match ->
             val path = match.groupValues[2]
             val asset = safeLocalFile(root, path)
             require(asset.isFile) { "فایل JavaScript محلی پیدا نشد: $path" }
             account(asset)
-            "<script>\\n${asset.readText().replace("</script", "<\\\\/script", ignoreCase = true)}\\n</script>"
+            "<script>\n${asset.readText().replace("</script", "<\\/script", ignoreCase = true)}\n</script>"
         }
 
-        val mediaPattern = Regex("""(\\b(?:src|poster)\\s*=\\s*["'])([^"']+)(["'])""", RegexOption.IGNORE_CASE)
+        val mediaPattern = Regex("""(\b(?:src|poster)\s*=\s*["'])([^"']+)(["'])""", RegexOption.IGNORE_CASE)
         html = mediaPattern.replace(html) { match ->
             val raw = match.groupValues[2]
             if (raw.startsWith("data:", true) || raw.startsWith("#")) return@replace match.value
@@ -63,7 +63,7 @@ object StaticPreviewRenderer {
     }
 
     private fun embedCss(css: String, root: File, cssDirectory: File): String {
-        val pattern = Regex("""url\\(\\s*(['"]?)(.*?)\\1\\s*\\)""", RegexOption.IGNORE_CASE)
+        val pattern = Regex("""url\(\s*(['"]?)(.*?)\1\s*\)""", RegexOption.IGNORE_CASE)
         return pattern.replace(css) { match ->
             val raw = match.groupValues[2].trim()
             if (raw.isBlank() || raw.startsWith("data:", true) || raw.startsWith("#")) return@replace match.value
