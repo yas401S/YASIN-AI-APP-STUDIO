@@ -10,6 +10,8 @@ class ProjectTemplatesTest {
         val files = ProjectTemplates.files("android-kotlin", "My App")
         assertTrue(files.containsKey("settings.gradle.kts"))
         assertTrue(files.containsKey("app/build.gradle.kts"))
+        assertTrue(files.containsKey(".github/workflows/android.yml"))
+        assertTrue(files.getValue(".github/workflows/android.yml").contains("assembleDebug"))
         assertTrue(files.containsKey("app/src/main/AndroidManifest.xml"))
         val main = files.entries.first { it.key.endsWith("/MainActivity.kt") }
         assertTrue(main.value.contains("ComponentActivity"))
