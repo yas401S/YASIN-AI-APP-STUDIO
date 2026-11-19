@@ -20,7 +20,7 @@ class FileHistoryTest {
             assertEquals(2, history.size)
             assertTrue(history[0].timestamp >= history[1].timestamp)
 
-            manager.saveFile("demo", "src/Main.kt", history.last().file.readText())
+            manager.saveFile("demo", "src/Main.kt", history.first().file.readText())
             assertEquals("version one", manager.readFile("demo", "src/Main.kt"))
             assertEquals(3, FileHistory.list(File(root, "workspace"), "demo", "src/Main.kt").size)
         } finally {
