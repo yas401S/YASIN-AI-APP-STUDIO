@@ -28,8 +28,8 @@ object ReactPreviewRenderer {
         }
         require(packageFile.length() <= 64 * 1024) { "package.json بیش از حد بزرگ است." }
         val packageJson = packageFile.readText()
-        require(packageJson.contains("\"react\": \"18.3.1\"") &&
-            packageJson.contains("\"react-dom\": \"18.3.1\"")) {
+        require(Regex("\"react\"\\s*:\\s*\"18.3.1\"").containsMatchIn(packageJson) &&
+            Regex("\"react-dom\"\\s*:\\s*\"18.3.1\"").containsMatchIn(packageJson)) {
             "پیش‌نمایش فعلاً با نسخه React 18.3.1 قالب استودیو سازگار است."
         }
         require(appFile.length() <= MAX_SOURCE_BYTES) { "فایل src/App.jsx بیش از حد بزرگ است." }
