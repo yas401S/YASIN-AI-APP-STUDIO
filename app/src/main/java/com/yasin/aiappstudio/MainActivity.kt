@@ -758,7 +758,7 @@ private fun StudioApp() {
                             val hasAndroidBuild = activeRoot?.let { File(it, "settings.gradle.kts").isFile || File(it, "settings.gradle").isFile } == true
                             val hasWebEntry = activeRoot?.let { File(it, "index.html").isFile || File(it, "package.json").isFile } == true
                             val needsStarterProject = buildIntent && (selectedProject.isBlank() ||
-                                if (webIntent) !hasWebEntry else !hasAndroidBuild)
+                                (if (webIntent) !hasWebEntry else !hasAndroidBuild))
                             if (needsStarterProject) {
                                 runCatching {
                                     val autoName = (if (webIntent) "AI-Web-" else "AI-Android-") + System.currentTimeMillis().toString()
