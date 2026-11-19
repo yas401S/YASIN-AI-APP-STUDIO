@@ -13,9 +13,11 @@ object FileHistory {
         require(project.isDirectory && project.parentFile == workspace.canonicalFile)
         val target = File(project, relativePath).canonicalFile
         require(target.path.startsWith(project.path + File.separator))
-        val safe = relativePath.replace('/', '_').replace('\\', '_')
+        val safe = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relativePath.toByteArray(Charsets.UTF_8))
         val history = File(project, ".history").canonicalFile
-        require(history.parentFile == project && history.isDirectory)
+        require(history.parentFile == project)
+        if (!history.exists()) return emptyList()
+        require(history.isDirectory)
         return history.listFiles().orEmpty().mapNotNull { file ->
             if (!file.isFile || !file.name.endsWith("-$safe.snapshot")) return@mapNotNull null
             val timestamp = file.name.substringBefore('-').toLongOrNull() ?: return@mapNotNull null
