@@ -18,7 +18,7 @@ object GitHubDeviceFlow {
     private const val TOKEN_URL = "https://github.com/login/oauth/access_token"
 
     fun requestDeviceCode(clientId: String): GitHubDeviceCode {
-        val body = postForm(DEVICE_URL, mapOf("client_id" to clientId))
+        val body = postParameters(DEVICE_URL, mapOf("client_id" to clientId))
         val json = JSONObject(body)
         return GitHubDeviceCode(
             deviceCode = json.getString("device_code"),
@@ -30,7 +30,7 @@ object GitHubDeviceFlow {
     }
 
     fun pollForAccessToken(clientId: String, deviceCode: String): String? {
-        val body = postForm(TOKEN_URL, mapOf(
+        val body = postParameters(TOKEN_URL, mapOf(
             "client_id" to clientId,
             "device_code" to deviceCode,
             "grant_type" to "urn:ietf:params:oauth:grant-type:device_code"
@@ -41,34 +41,35 @@ object GitHubDeviceFlow {
         when (json.optString("error")) {
             "authorization_pending" -> return null
             "slow_down" -> throw GitHubSlowDownException()
-            "expired_token" -> throw IllegalStateException("کد ورود منقضی شده است؛ دوباره درخواست کد بدهید.")
+            "expired_token", "token_expired" -> throw IllegalStateException("کد ورود منقضی شده است؛ دوباره درخواست کد بدهید.")
             "access_denied" -> throw IllegalStateException("درخواست ورود در GitHub رد شد.")
-            else -> throw IllegalStateException(json.optString("error_description", "دریافت مجوز GitHub ناموفق بود."))
+            else -> throw IllegalStateException(json.optString("error_description", json.optString("error", "دریافت مجوز GitHub ناموفق بود.")))
         }
     }
 
-    private fun postForm(endpoint: String, values: Map<String, String>): String {
+    // GitHub documents these Device Flow inputs as request parameters.
+    // Send them in the URL query while keeping the HTTP method POST.
+    private fun postParameters(endpoint: String, values: Map<String, String>): String {
         val encoded = values.entries.joinToString("&") { (key, value) ->
             URLEncoder.encode(key, "UTF-8") + "=" + URLEncoder.encode(value, "UTF-8")
         }
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+        val requestUrl = URL(endpoint + "?" + encoded)
+        val connection = (requestUrl.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15000
             readTimeout = 15000
-            doOutput = true
+            doOutput = false
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
             setRequestProperty("User-Agent", "YASIN-AI-APP-STUDIO")
         }
         return try {
-            connection.outputStream.use { it.write(encoded.toByteArray(Charsets.UTF_8)) }
             val statusCode = connection.responseCode
             val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (statusCode !in 200..299) {
                 val safeBody = response.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(700)
                 throw IllegalStateException(
-                    "GitHub HTTP $statusCode در مسیر " + URL(endpoint).path +
+                    "GitHub HTTP $statusCode در مسیر " + requestUrl.path +
                         (if (safeBody.isNotBlank()) "؛ پاسخ سرور: $safeBody" else "؛ بدنه پاسخ خالی بود.")
                 )
             }
